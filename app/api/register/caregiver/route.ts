@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCaregiver } from '@/services/caregiver.service';
-import { caregiverSchema } from '@/lib/validations/caregiver.schema';
 import { getSession } from '@/lib/auth/session';
+import { z } from 'zod';
+
+const caregiverSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  birthday: z.union([z.string(), z.date()]).optional(),
+  phone: z.string().optional(),
+  lineId: z.string().optional(),
+  address: z.string().optional(),
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,15 +24,21 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // Validate
     const validated = caregiverSchema.parse(body);
 
     const dataForService = {
-        ...validated,
-        birthday: validated.birthday as Date,
+      firstName: validated.firstName ?? "",
+      lastName: validated.lastName ?? "",
+      birthday: validated.birthday ? new Date(validated.birthday) : new Date(),
+
+      genderId: 1,
+      maritalStatusId: 1,
+
+      phone: validated.phone,
+      lineId: validated.lineId,
+      address: validated.address,
     };
 
-    // Create caregiver
     const caregiver = await createCaregiver(session.userId, dataForService);
 
     return NextResponse.json({

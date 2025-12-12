@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
-import liff from '@line/liff';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get LINE user ID from request or session
-    // This is a simplified example
     const lineId = request.headers.get('x-line-userid');
 
     if (!lineId) {
@@ -19,10 +16,14 @@ export async function GET(request: NextRequest) {
       where: { lineId },
       select: {
         id: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
         lineId: true,
+        caregiverProfile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            phone: true
+          },
+        },
       },
     });
 

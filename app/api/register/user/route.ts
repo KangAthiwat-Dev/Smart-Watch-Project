@@ -7,17 +7,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate
     const validated = registerSchema.parse(body);
 
-    // Register
     const user = await registerUser(validated);
 
-    // Send LINE confirmation
+    const firstName = user.caregiverProfile?.firstName ?? "";
+    const lastName  = user.caregiverProfile?.lastName ?? "";
+
     if (user.lineId) {
       await sendLineNotification(
         user.lineId,
-        `✅ ลงทะเบียนสำเร็จ\n\nยินดีต้อนรับคุณ ${user.firstName} ${user.lastName}\n\nคุณสามารถเริ่มใช้งานระบบได้แล้ว`
+        `✅ ลงทะเบียนสำเร็จ\n\nยินดีต้อนรับคุณ ${firstName} ${lastName}\n\nคุณสามารถเริ่มใช้งานระบบได้แล้ว`
       );
     }
 
@@ -25,8 +25,8 @@ export async function POST(request: NextRequest) {
       success: true,
       user: {
         id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName,
+        lastName,
       },
     });
   } catch (error) {

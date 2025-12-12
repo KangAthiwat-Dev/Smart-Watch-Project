@@ -26,26 +26,37 @@ export async function loginAction(formData: FormData): Promise<AuthResponse> {
 
     try {
         // 2. Login & Create Session
-        const { user, token } = await loginUser(validated.data.username, validated.data.password);
+        const { user, token } = await loginUser(
+            validated.data.username, 
+            validated.data.password
+        );
         
-        if (user.statusId !== 1) { 
+        // ❌ แก้อันนี้ เพราะ schema ไม่มี statusId แล้ว
+        // if (user.statusId !== 1) { ... }
+
+        // ✅ ใช้ role แทน (ตาม schema จริง)
+        if (user.role !== "ADMIN") {
             throw new Error("คุณไม่มีสิทธิ์เข้าถึงส่วนผู้ดูแลระบบ");
+        }
+
+        // (optional) หากต้องเช็คว่าถูกแบนไหม
+        if (!user.isActive) {
+            throw new Error("บัญชีของคุณถูกระงับการใช้งาน");
         }
 
         await createSession(token);
 
-        // ✅ จุดสำคัญ: อย่าเพิ่ง Redirect ในนี้ เพราะจะโดน Catch จับ
-        
     } catch (error) {
-        // ถ้าเกิด Error จริงๆ ให้ return error response กลับไป
-        const errorMessage = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการเข้าสู่ระบบ";
+        const errorMessage = error instanceof Error 
+            ? error.message 
+            : "เกิดข้อผิดพลาดในการเข้าสู่ระบบ";
+
         return { 
             success: false, 
             error: errorMessage
         };
     }
 
-    // 3. ✅ Redirect นอก Try/Catch
-    // ถ้าโค้ดรันมาถึงตรงนี้ได้ แปลว่า Login สำเร็จ (เพราะถ้าไม่สำเร็จจะติด return ใน catch ไปแล้ว)
+    // 3. Redirect นอก try/catch เพื่อไม่ให้เข้า catch
     redirect('/admin/dashboard');
 }

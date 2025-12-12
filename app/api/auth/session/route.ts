@@ -13,19 +13,9 @@ export async function GET() {
       );
     }
 
-    // Get full user data
+    // ❗ ดึงทุกฟิลด์ตาม database Prisma โดยไม่ต้องระบุ select
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        username: true,
-        lineId: true,
-        phone: true,
-        statusId: true,
-        isActive: true,
-      },
     });
 
     if (!user) {
@@ -36,6 +26,7 @@ export async function GET() {
     }
 
     return NextResponse.json({ user });
+
   } catch (error) {
     return NextResponse.json(
       { error: 'Session check failed' },
