@@ -522,138 +522,90 @@ export const createWatchConnectionBubble = (caregiverProfile: CaregiverProfile, 
 };
 
 // =================================================================
-// 🤝 6. Borrow/Return - ธีมส้ม (Orange Gradient) - ปรับโฉมใหม่
+// 🤝 6. Borrow/Return - ดีไซน์เดิม (Classic Orange) - แก้ URL
 // =================================================================
 export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorrow: any): FlexBubble => {
-    // เช็ค LIFF URL
-    const liffBase = process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
+
+    const liffBase = process.env.LIFF_BASE_URL!; 
     
-    // ตรวจสอบสถานะการยืม (ถ้ามีรายการและยังไม่คืน)
     const isBorrowing = !!activeBorrow;
     
-    // URL สำหรับปุ่ม
-    const borrowUrl = `${liffBase}/borrow/create`;
-    const returnUrl = `${liffBase}/borrow/return/${activeBorrow?.id || ''}`;
-
-    // ดึงชื่ออุปกรณ์ (ถ้ามี)
-    const equipmentName = activeBorrow?.items?.[0]?.equipment?.name || "-";
+    const borrowUrl = `${liffBase}/equipment/borrow`;
+    const returnUrl = activeBorrow?.id 
+        ? `${liffBase}/equipment/return/${activeBorrow.id}` 
+        : `${liffBase}/equipment/return`;
 
     return {
-        type: "bubble",
+        type: "bubble", 
         size: "mega",
-        header: {
-            type: "box",
-            layout: "vertical",
-            paddingAll: "xxl",
-            background: {
-                type: "linearGradient",
-                angle: "135deg",
-                startColor: "#F97316", // ส้มเข้ม
-                endColor: "#FFEDD5"    // ส้มอ่อนไล่ไปขาว
-            },
-            contents: [
-                {
-                    type: "text",
-                    text: "📦 ระบบยืม-คืน",
-                    weight: "bold",
-                    size: "xl",
-                    color: "#FFFFFF",
-                    align: "start"
-                },
-                {
-                    type: "text",
-                    text: "Caregiver Service",
-                    size: "xs",
-                    color: "#FFF7ED",
-                    align: "start",
-                    margin: "xs"
-                }
-            ]
-        },
         body: {
-            type: "box",
-            layout: "vertical",
-            paddingAll: "lg",
+            type: "box", 
+            layout: "vertical", 
+            paddingAll: "xl", 
             spacing: "lg",
             contents: [
-                // ส่วนแสดงสถานะ
+                // Header with Orange Gradient
                 {
-                    type: "box",
-                    layout: "vertical",
-                    backgroundColor: isBorrowing ? "#FFF7ED" : "#F1F5F9", // ส้มอ่อน หรือ เทา
-                    cornerRadius: "lg",
-                    paddingAll: "lg",
-                    borderWidth: "1px",
-                    borderColor: isBorrowing ? "#FDBA74" : "#E2E8F0",
+                    type: "box", 
+                    layout: "vertical", 
+                    paddingAll: "xl",
+                    background: { 
+                        type: "linearGradient", 
+                        angle: "135deg", 
+                        startColor: "#F97316", 
+                        endColor: "#FB923C" 
+                    },
+                    cornerRadius: "xxl",
                     contents: [
-                        {
-                            type: "text",
-                            text: isBorrowing ? "รายการปัจจุบัน" : "สถานะ",
-                            size: "xs",
-                            color: "#94A3B8",
-                            weight: "bold"
+                        { type: "text", text: "ยืม-คืนครุภัณฑ์", weight: "bold", size: "xl", color: "#FFFFFF", align: "center" },
+                        { type: "text", text: "ระบบจัดการอุปกรณ์", size: "xs", color: "#FFEDD5", align: "center", margin: "sm" }
+                    ]
+                },
+                // Status Box
+                {
+                    type: "box", 
+                    layout: "vertical", 
+                    backgroundColor: isBorrowing ? "#F0FDF4" : "#F8FAFC", 
+                    cornerRadius: "xl", 
+                    paddingAll: "xl", 
+                    borderWidth: "2px", 
+                    borderColor: isBorrowing ? "#BBF7D0" : "#E2E8F0",
+                    margin: "lg",
+                    contents: [
+                        { type: "text", text: isBorrowing ? "🟢 กำลังยืมอุปกรณ์" : "⚪ ยังไม่มีรายการยืม", weight: "bold", color: isBorrowing ? "#166534" : "#64748B", align: "center", size: "md" },
+                        // เช็คว่ามี items ไหมก่อนดึงชื่อ กัน Error
+                        ...(isBorrowing && activeBorrow.items && activeBorrow.items.length > 0
+                            ? [{ type: "text", text: activeBorrow.items[0]?.equipment?.name || "อุปกรณ์", size: "sm", color: "#15803D", align: "center", margin: "md" } as const] 
+                            : [])
+                    ]
+                },
+                // Buttons
+                {
+                    type: "box", 
+                    layout: "vertical", 
+                    spacing: "md",
+                    margin: "lg",
+                    contents: [
+                        { 
+                            type: "button", 
+                            style: "primary", 
+                            color: "#10B981", 
+                            height: "md", 
+                            action: { type: "uri", label: "ทำรายการยืม", uri: borrowUrl } 
                         },
-                        {
-                            type: "text",
-                            text: isBorrowing ? equipmentName : "ยังไม่มีรายการยืม",
-                            weight: "bold",
-                            size: isBorrowing ? "lg" : "md",
-                            color: isBorrowing ? "#EA580C" : "#64748B", // ส้มเข้ม หรือ เทาเข้ม
-                            wrap: true,
-                            margin: "sm"
-                        },
-                        // ถ้ากำลังยืม ให้โชว์วันที่ยืมด้วย (ถ้ามีข้อมูล)
-                        ...(isBorrowing && activeBorrow.createdAt ? [{
-                            type: "separator",
-                            margin: "md",
-                            color: "#FED7AA"
-                        } as const, {
-                            type: "text",
-                            text: `วันที่ยืม: ${new Date(activeBorrow.createdAt).toLocaleDateString('th-TH')}`,
-                            size: "xxs",
-                            color: "#9A3412",
-                            margin: "md",
-                            align: "end"
-                        } as const] : [])
+                        { 
+                            type: "button", 
+                            style: "secondary", 
+                            color: isBorrowing ? "#3B82F6" : "#CBD5E1", 
+                            height: "md", 
+                            // ถ้ามีของยืม ให้เป็นลิ้งค์คืน / ถ้าไม่มี ให้เป็นปุ่มหลอก (Postback)
+                            action: isBorrowing 
+                                ? { type: "uri", label: "ทำรายการคืน", uri: returnUrl } 
+                                : { type: "postback", label: "ทำรายการคืน", data: "no_action" } 
+                        }
                     ]
                 }
             ]
-        },
-        footer: {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            paddingAll: "lg",
-            contents: [
-                // ปุ่มทำรายการยืม (สีเขียว สบายตา)
-                {
-                    type: "button",
-                    style: "primary",
-                    color: "#10B981", 
-                    height: "sm",
-                    action: {
-                        type: "uri",
-                        label: "📝 ทำรายการยืมใหม่",
-                        uri: borrowUrl
-                    }
-                },
-                // ปุ่มทำรายการคืน (สีส้มแดง เพื่อให้เด่น หรือ เทาถ้ากดไม่ได้)
-                {
-                    type: "button",
-                    style: isBorrowing ? "primary" : "secondary",
-                    color: isBorrowing ? "#F97316" : "#CBD5E1", // ส้ม หรือ เทา
-                    height: "sm",
-                    action: isBorrowing 
-                        ? { type: "uri", label: "↩️ คืนอุปกรณ์นี้", uri: returnUrl }
-                        : { type: "postback", label: "คืนอุปกรณ์ (ไม่มีรายการ)", data: "no_action" },
-                    margin: "md"
-                }
-            ]
-        },
-        styles: {
-            footer: {
-                separator: true 
-            }
         }
     };
 };
