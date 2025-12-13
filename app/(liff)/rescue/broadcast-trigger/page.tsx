@@ -2,8 +2,7 @@
 import { useEffect, useState } from 'react'
 import liff from '@line/liff'
 
-// ใส่ LIFF ID ของนายน้อยตรงนี้ (หรือดึงจาก .env ก็ได้)
-const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID_TRIGGER || 'YOUR_LIFF_ID_HERE'; 
+const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID_TRIGGER!; 
 
 export default function BroadcastTriggerPage() {
   const [status, setStatus] = useState('กำลังระบุตำแหน่ง...')
@@ -62,7 +61,7 @@ export default function BroadcastTriggerPage() {
             latitude: lat,
             longitude: lng,
             // ⭐ จุดสำคัญ: ส่งข้อความหัวข้อตรงนี้ครับ (แก้คำได้ตามใจชอบ)
-            message: "💗 สุขภาพผิดปกติ" 
+            message: "เหตุฉุกเฉิน" 
         }) 
       })
 
@@ -71,7 +70,7 @@ export default function BroadcastTriggerPage() {
         // ปิดหน้าต่างอัตโนมัติหลังส่งเสร็จ 2 วินาที
         setTimeout(() => {
             liff.closeWindow()
-        }, 2000)
+        }, 1000)
       } else {
         setStatus('เกิดข้อผิดพลาดในการส่งข้อมูล')
       }

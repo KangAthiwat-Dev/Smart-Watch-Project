@@ -26,17 +26,17 @@ export const createAlertFlexMessage = (
     let endColor = "#FF4B2B";
 
     if (alertType === 'FALL') {
-        headerText = "🚨 ตรวจพบการล้ม";
+        headerText = "ตรวจพบการล้ม";
         startColor = "#FF416C"; endColor = "#FF4B2B"; 
     } else if (alertType === 'SOS') {
-        headerText = "🆘 ขอความช่วยเหลือ";
+        headerText = "ขอความช่วยเหลือ";
         startColor = "#FF8008"; endColor = "#FFC837"; 
     } else if (alertType === 'HEALTH') {
-        headerText = "💓 สุขภาพผิดปกติ";
+        headerText = "สุขภาพผิดปกติ";
         startColor = "#F2994A"; endColor = "#F2C94C"; 
     } else if (alertType === 'ZONE') {
         // ✅ แก้ชื่อให้ชัดเจน: นี่คือระดับอันตรายสูงสุด (ชั้น 2)
-        headerText = "⛔ หลุดเขตอันตราย (ชั้น 2)"; 
+        headerText = "หลุดเขตอันตราย"; 
         startColor = "#D90429"; endColor = "#EF233C"; // แดงเข้ม
     }
 
@@ -76,7 +76,8 @@ export const createAlertFlexMessage = (
     // 4. 🔥 จัดการปุ่ม
     const buttonContents: any[] = [];
 
-    const broadcastUrl = `${process.env.LIFF_BASE_URL}/rescue/broadcast-trigger?id=${record.id || 0}`;
+    // const broadcastUrl = `${process.env.LIFF_BASE_URL}/rescue/broadcast-trigger?id=${record.id || 0}`;
+    const broadcastUrl = `${process.env.LIFF_BASE_URL_TRIGGER}?id=${record.id || 0}`;
 
     if (alertType !== 'SOS') {
         buttonContents.push({
@@ -127,7 +128,7 @@ export async function sendCriticalAlertFlexMessage(
     try {
         await lineClient.pushMessage(recipientLineId, {
             type: 'flex',
-            altText: `🚨 แจ้งเตือนด่วน: ${alertType}`,
+            altText: `แจ้งเตือนด่วน: ${alertType}`,
             contents: flexMessageContent, 
         });
         console.log(`✅ LINE Alert sent to: ${recipientLineId} [Type: ${alertType}]`);
@@ -144,10 +145,15 @@ export const createGeneralAlertBubble = (
     message: string, 
     value: string, 
     color: string = "#3B82F6",
-    isEmergency: boolean = false
+    isEmergency: boolean = false,
+    recordId: number = 0
 ): FlexBubble => {
     
     const buttonContents: any[] = [];
+
+    const triggerLiffUrl = process.env.LIFF_BASE_URL_TRIGGER || "https://liff.line.me/2008677937-l3LIK8BK";
+    
+    const broadcastUrl = `${triggerLiffUrl}?id=${recordId}`;
 
     if (isEmergency) {
         buttonContents.push({
@@ -156,7 +162,7 @@ export const createGeneralAlertBubble = (
             color: "#EF4444",
             margin: "sm",
             height: "md",
-            action: { type: "uri", label: "📞 ขอความช่วยเหลือ (1669)", uri: `tel:1669` }
+            action: { type: "uri", label: "ขอความช่วยเหลือเพิ่มเติม", uri: broadcastUrl }
         });
     }
 
