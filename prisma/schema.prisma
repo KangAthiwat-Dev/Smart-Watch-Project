@@ -39,6 +39,13 @@ enum HelpType {
     WATCH_SOS
 }
 
+// ✅ เพิ่ม Enum
+enum EquipmentStatus {
+  AVAILABLE
+  BORROWED
+  MAINTENANCE
+}
+
 enum BorrowStatus {
     PENDING
     APPROVED
@@ -316,6 +323,9 @@ model Equipment {
     name String
     code String @unique
     isActive Boolean @default(true)
+
+    // ✅ เพิ่มแค่อันนี้ (เพื่อให้รู้ว่าของว่างไหม)
+    status EquipmentStatus @default(AVAILABLE)
   
     borrowItems BorrowEquipmentItem[]
 
