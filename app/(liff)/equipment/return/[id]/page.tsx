@@ -1,7 +1,10 @@
-import { notFound } from "next/navigation";
-import prisma from "@/lib/db/prisma"; // หรือ path ที่นายน้อยเก็บ prisma
+// path: app/(liff)/equipment/return/[id]/page.tsx
 
-export default async function ReturnEquipmentPage({ params }: { params: { id: string } }) {
+import { notFound } from "next/navigation";
+import prisma from "@/lib/db/prisma";
+// import Component ปุ่มคืนของ หรือ ฟอร์มคืนของ ของนายน้อยมาด้วย
+
+export default async function ReturnDetail({ params }: { params: { id: string } }) {
   const borrowId = parseInt(params.id);
   if (isNaN(borrowId)) return notFound();
 
@@ -11,54 +14,80 @@ export default async function ReturnEquipmentPage({ params }: { params: { id: st
     include: { items: { include: { equipment: true } } }
   });
 
-  if (!borrow) return notFound(); // ถ้าหาไม่เจอจริงๆ ค่อย 404
+  if (!borrow) return notFound();
 
-  // 2. 🟡 กรณี: รอการอนุมัติ (PENDING) -> โชว์หน้าแจ้งเตือน
-  if (borrow.status === 'PENDING') {
-    return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="w-20 h-20 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center text-4xl mb-4">
-          ⏳
-        </div>
-        <h1 className="text-xl font-bold text-yellow-700">รายการนี้รอการอนุมัติ</h1>
-        <p className="text-gray-500 mt-2">เจ้าหน้าที่กำลังตรวจสอบคำขอของคุณ<br/>กรุณารอการแจ้งเตือนเมื่อได้รับการอนุมัติครับ</p>
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg w-full max-w-sm">
-            <p className="text-sm text-gray-400">อุปกรณ์:</p>
-            <p className="font-bold text-gray-700">{borrow.items[0]?.equipment.name}</p>
-        </div>
-      </div>
-    );
-  }
+  const eqName = borrow.items[0]?.equipment.name || "อุปกรณ์";
 
-  // 3. 🔴 กรณี: ไม่อนุมัติ (REJECTED) -> โชว์หน้าแจ้งเตือน
-  if (borrow.status === 'REJECTED') {
-    return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-4xl mb-4">
-          ❌
-        </div>
-        <h1 className="text-xl font-bold text-red-700">คำขอถูกปฏิเสธ</h1>
-        <p className="text-gray-500 mt-2">รายการนี้ไม่ได้รับการอนุมัติ</p>
-      </div>
-    );
-  }
-
-  // 4. 🟢 กรณี: อนุมัติแล้ว (APPROVED) -> โชว์ฟอร์มคืนของตามปกติ
+  // ==========================================
+  // 🟢 CASE: APPROVED -> ให้คืนของได้ (เคสปกติ)
+  // ==========================================
   if (borrow.status === 'APPROVED') {
-     // ... (ใส่ Component ฟอร์มคืนของเดิมของนายน้อยตรงนี้) ...
-     return (
-        // <ReturnForm borrow={borrow} /> หรือ HTML เดิมที่มี
-        <div className="p-4">
-            <h1 className="text-lg font-bold mb-4">คืนอุปกรณ์: {borrow.items[0]?.equipment.name}</h1>
-            {/* ... ปุ่มกดยืนยันคืน ... */}
-        </div>
-     )
+      return (
+          <div className="p-4">
+              <h1 className="text-xl font-bold text-center mb-4">คืนอุปกรณ์</h1>
+              <div className="bg-blue-50 p-4 rounded-lg mb-4 text-center">
+                  <p className="text-gray-500 text-sm">รายการ</p>
+                  <p className="text-xl font-bold text-blue-600">{eqName}</p>
+              </div>
+              
+              {/* ใส่ปุ่มกดคืนของ หรือ Component Form ตรงนี้ */}
+              {/* <ReturnButton borrowId={borrowId} /> */}
+              <button className="w-full bg-blue-600 text-white p-3 rounded-xl font-bold">
+                ยืนยันการคืนอุปกรณ์
+              </button>
+          </div>
+      );
   }
 
-  // กรณีอื่นๆ (เช่น คืนไปแล้ว)
+  // ==========================================
+  // 🟡 CASE: PENDING -> รออนุมัติ
+  // ==========================================
+  if (borrow.status === 'PENDING') {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+           <div className="text-5xl mb-4">⏳</div>
+           <h2 className="text-xl font-bold text-yellow-600">รอการอนุมัติ</h2>
+           <p className="text-gray-500 mt-2">คำขอของนายน้อยกำลังรอเจ้าหน้าที่ตรวจสอบครับ</p>
+        </div>
+      );
+  }
+
+  // ==========================================
+  // 🟠 CASE: RETURN_PENDING -> รอตรวจคืน
+  // ==========================================
+  if (borrow.status === 'RETURN_PENDING') {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+           <div className="text-5xl mb-4">📦</div>
+           <h2 className="text-xl font-bold text-orange-600">ได้รับเรื่องคืนแล้ว</h2>
+           <p className="text-gray-500 mt-2">กรุณานำอุปกรณ์ไปคืนที่จุดรับคืน<br/>เจ้าหน้าที่จะตรวจสอบความเรียบร้อยครับ</p>
+        </div>
+      );
+  }
+
+  // ==========================================
+  // 🏁 CASE: RETURNED -> คืนเสร็จแล้ว
+  // ==========================================
+  if (borrow.status === 'RETURNED') {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+           <div className="text-5xl mb-4">✅</div>
+           <h2 className="text-xl font-bold text-gray-600">รายการนี้คืนสำเร็จแล้ว</h2>
+           <p className="text-gray-400 mt-2">ขอบคุณที่ใช้บริการครับ</p>
+        </div>
+      );
+  }
+
+  // ==========================================
+  // 🔴 CASE: REJECTED / RETURN_FAILED
+  // ==========================================
   return (
-    <div className="p-6 text-center text-gray-500">
-        รายการนี้เสร็จสิ้นไปแล้วครับ
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+       <div className="text-5xl mb-4">⚠️</div>
+       <h2 className="text-xl font-bold text-red-600">
+           {borrow.status === 'REJECTED' ? 'คำขอถูกปฏิเสธ' : 'การคืนมีปัญหา'}
+       </h2>
+       <p className="text-gray-500 mt-2">กรุณาติดต่อเจ้าหน้าที่เพื่อสอบถามข้อมูลเพิ่มเติมครับ</p>
     </div>
   );
 }

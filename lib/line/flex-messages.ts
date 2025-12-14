@@ -522,65 +522,92 @@ export const createWatchConnectionBubble = (caregiverProfile: CaregiverProfile, 
 };
 
 // =================================================================
-// 🤝 6. Borrow/Return - Blue Premium Theme (Support Status Colors)
+// 🤝 6. Borrow/Return - รองรับ 6 สถานะ (PENDING, APPROVED, REJECTED, RETURN_...)
 // =================================================================
 export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorrow: any): FlexBubble => {
 
     const liffBase = process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
     
-    // ดึงสถานะปัจจุบัน (ถ้าไม่มีคือ NONE)
-    const status = activeBorrow?.status || 'NONE'; 
-    const isBorrowing = status !== 'NONE';
+    // ดึงสถานะ (ถ้าไม่มีให้เป็น NULL)
+    const status = activeBorrow?.status || 'NULL'; 
+    const isActive = !!activeBorrow;
 
+    // URL: ถ้ามี ID ให้พุ่งไปหน้า ID เลย (เช่น /equipment/return/105)
     const borrowUrl = `${liffBase}/equipment/borrow`;
-    // ถ้ามี ID ให้ส่งไปหน้า ID เพื่อเช็คสถานะได้
     const returnUrl = activeBorrow?.id 
         ? `${liffBase}/equipment/return/${activeBorrow.id}` 
         : `${liffBase}/equipment/return`;
 
-    // 🎨 ตั้งค่าสีและข้อความตามสถานะ
-    let statusText = "⚪ ยังไม่มีรายการยืม";
-    let statusColor = "#475569"; // เทา
+    // ตัวแปรสำหรับตั้งค่าสีและข้อความ
+    let statusText = "⚪ สถานะไม่ระบุ";
+    let statusColor = "#64748B"; // เทา
     let statusBgStart = "#F8FAFC";
     let statusBgEnd = "#F1F5F9";
     let borderColor = "#CBD5E1";
-    let equipmentName = "-";
+    let btnLabel = "ดูรายละเอียด";
+    let isPrimaryBtn = false; // ปุ่มเป็นสีเด่นไหม
+    let equipmentName = activeBorrow?.items?.[0]?.equipment?.name || "อุปกรณ์";
 
-    if (isBorrowing) {
-        equipmentName = activeBorrow.items?.[0]?.equipment?.name || "อุปกรณ์";
+    // 🎨 Logic แยกสีตาม Enum 6 แบบ
+    switch (status) {
+        case 'PENDING': // 1. รออนุมัติ (เหลือง)
+            statusText = "⏳ รอการอนุมัติ";
+            statusColor = "#D97706"; 
+            statusBgStart = "#FFFBEB"; statusBgEnd = "#FEF3C7";
+            borderColor = "#FCD34D";
+            btnLabel = "รอเจ้าหน้าที่ตรวจสอบ";
+            isPrimaryBtn = false;
+            break;
 
-        switch (status) {
-            case 'PENDING': // รออนุมัติ (เหลือง)
-                statusText = "⏳ รอการอนุมัติ";
-                statusColor = "#D97706"; // เหลืองเข้ม
-                statusBgStart = "#FFFBEB"; // เหลืองอ่อนมาก
-                statusBgEnd = "#FEF3C7";
-                borderColor = "#FCD34D";
-                break;
-            case 'APPROVED': // อนุมัติแล้ว/กำลังยืม (เขียว)
-                statusText = "🟢 กำลังยืมอุปกรณ์";
-                statusColor = "#059669"; // เขียวเข้ม
-                statusBgStart = "#ECFDF5"; 
-                statusBgEnd = "#D1FAE5";
-                borderColor = "#6EE7B7";
-                break;
-            case 'REJECTED': // ไม่อนุมัติ (แดง)
-                statusText = "🔴 ไม่อนุมัติ";
-                statusColor = "#DC2626"; 
-                statusBgStart = "#FEF2F2";
-                statusBgEnd = "#FEE2E2";
-                borderColor = "#FCA5A5";
-                break;
-            case 'RETURN_PENDING': // รอตรวจคืน (ส้ม)
-                statusText = "🟠 รอตรวจสอบการคืน";
-                statusColor = "#EA580C"; 
-                statusBgStart = "#FFF7ED";
-                statusBgEnd = "#FFEDD5";
-                borderColor = "#FDBA74";
-                break;
-            default: // อื่นๆ (เช่น คืนแล้ว)
-                statusText = "⚪ จบรายการแล้ว";
-        }
+        case 'APPROVED': // 2. อนุมัติ/กำลังยืม (เขียว) -> *สถานะนี้แหละที่ต้องกดคืนได้*
+            statusText = "🟢 กำลังยืมอุปกรณ์";
+            statusColor = "#059669"; 
+            statusBgStart = "#ECFDF5"; statusBgEnd = "#D1FAE5";
+            borderColor = "#6EE7B7";
+            btnLabel = "ทำรายการคืน";
+            isPrimaryBtn = true; // ปุ่มสีน้ำเงิน
+            break;
+
+        case 'REJECTED': // 3. ปฏิเสธ (แดง)
+            statusText = "🔴 ไม่อนุมัติให้ยืม";
+            statusColor = "#DC2626"; 
+            statusBgStart = "#FEF2F2"; statusBgEnd = "#FEE2E2";
+            borderColor = "#FCA5A5";
+            btnLabel = "ดูรายละเอียด";
+            isPrimaryBtn = false;
+            break;
+
+        case 'RETURN_PENDING': // 4. แจ้งคืนแล้ว รอตรวจ (ส้ม)
+            statusText = "🟠 รอตรวจสอบการคืน";
+            statusColor = "#EA580C"; 
+            statusBgStart = "#FFF7ED"; statusBgEnd = "#FFEDD5";
+            borderColor = "#FDBA74";
+            btnLabel = "ติดตามสถานะ";
+            isPrimaryBtn = false;
+            break;
+
+        case 'RETURNED': // 5. คืนสำเร็จ (เทาเข้ม/ฟ้าหม่น)
+            statusText = "🏁 คืนอุปกรณ์แล้ว";
+            statusColor = "#475569"; 
+            statusBgStart = "#F1F5F9"; statusBgEnd = "#E2E8F0";
+            borderColor = "#94A3B8";
+            btnLabel = "ประวัติการคืน";
+            isPrimaryBtn = false;
+            break;
+
+        case 'RETURN_FAILED': // 6. คืนไม่ผ่าน (แดงเข้ม)
+            statusText = "⚠️ การคืนมีปัญหา";
+            statusColor = "#991B1B"; 
+            statusBgStart = "#FEF2F2"; statusBgEnd = "#FECACA";
+            borderColor = "#EF4444";
+            btnLabel = "ติดต่อเจ้าหน้าที่";
+            isPrimaryBtn = true; // ปุ่มแดง/น้ำเงินให้รีบกด
+            break;
+
+        default: // กรณีไม่มีรายการ หรือ NULL
+            statusText = "⚪ ยังไม่มีรายการยืม";
+            equipmentName = "-";
+            btnLabel = "ไม่มีรายการ";
     }
 
     return {
@@ -592,34 +619,23 @@ export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorro
             paddingAll: "xl", 
             spacing: "lg",
             contents: [
-                // Header with Blue Gradient
+                // Header
                 {
                     type: "box", 
                     layout: "vertical", 
                     paddingAll: "xl",
-                    background: { 
-                        type: "linearGradient", 
-                        angle: "135deg", 
-                        startColor: "#3B82F6", 
-                        endColor: "#60A5FA" 
-                    },
+                    background: { type: "linearGradient", angle: "135deg", startColor: "#3B82F6", endColor: "#60A5FA" },
                     cornerRadius: "xxl",
-                    margin: "none",
                     contents: [
                         { type: "text", text: "ยืม-คืนครุภัณฑ์", weight: "bold", size: "xl", color: "#FFFFFF", align: "center" },
                         { type: "text", text: "ระบบจัดการอุปกรณ์", size: "xs", color: "#DBEAFE", align: "center", margin: "sm" }
                     ]
                 },
-                // Status Box (Dynamic Color)
+                // Status Box
                 {
                     type: "box", 
                     layout: "vertical", 
-                    background: { 
-                        type: "linearGradient", 
-                        angle: "90deg", 
-                        startColor: statusBgStart, 
-                        endColor: statusBgEnd 
-                    }, 
+                    background: { type: "linearGradient", angle: "90deg", startColor: statusBgStart, endColor: statusBgEnd }, 
                     cornerRadius: "xl", 
                     paddingAll: "xl", 
                     borderWidth: "2px", 
@@ -627,14 +643,7 @@ export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorro
                     margin: "lg",
                     contents: [
                         { type: "text", text: statusText, weight: "bold", color: statusColor, align: "center", size: "md" },
-                        ...(isBorrowing ? [{ 
-                            type: "text", 
-                            text: equipmentName, 
-                            size: "sm", 
-                            color: statusColor, // ใช้สีเดียวกับสถานะเพื่อคุมโทน
-                            align: "center", 
-                            margin: "md",
-                        } as const] : [])
+                        ...(isActive ? [{ type: "text", text: equipmentName, size: "sm", color: statusColor, align: "center", margin: "md" } as const] : [])
                     ]
                 },
                 // Buttons
@@ -651,15 +660,15 @@ export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorro
                             height: "md", 
                             action: { type: "uri", label: "ทำรายการยืมใหม่", uri: borrowUrl } 
                         },
+                        // ปุ่มที่ 2 เปลี่ยนตามสถานะ
                         { 
                             type: "button", 
-                            style: status === 'APPROVED' ? "primary" : "secondary", 
-                            // ถ้า Approved เป็นสีฟ้า (กดคืนได้) ถ้าอื่น ๆ เป็นสีเทา (กดดูสถานะ)
-                            color: status === 'APPROVED' ? "#3B82F6" : "#94A3B8", 
+                            style: isPrimaryBtn ? "primary" : "secondary", 
+                            color: isPrimaryBtn ? "#3B82F6" : "#94A3B8", 
                             height: "md", 
-                            action: isBorrowing 
-                                ? { type: "uri", label: status === 'APPROVED' ? "ทำรายการคืน" : "ดูรายละเอียดสถานะ", uri: returnUrl } 
-                                : { type: "postback", label: "ทำรายการคืน", data: "no_action" } 
+                            action: isActive 
+                                ? { type: "uri", label: btnLabel, uri: returnUrl } 
+                                : { type: "postback", label: "ไม่มีรายการ", data: "no_action" } 
                         }
                     ]
                 }
