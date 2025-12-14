@@ -96,6 +96,8 @@ model AdminProfile {
 
     firstName String
     lastName String
+
+    image String?
     phone String?
     position String?
 

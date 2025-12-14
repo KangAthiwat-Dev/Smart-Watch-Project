@@ -1,44 +1,39 @@
 'use client';
 
 import { useAuthStore, useAlertStore, useModalStore } from '@/store/store';
-import { Bell, Menu, User, LogOut } from 'lucide-react';
+import { Bell, Menu, User, LogOut, ChevronDown } from 'lucide-react'; // เพิ่ม ChevronDown
 import { toast } from 'sonner';
+// ✅ Import Dialog ที่สร้าง
+import { ProfileDialog } from '@/components/features/admins/profile-dialog';
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser } = useAuthStore(); // ✅ ดึง setUser มาด้วยเพื่ออัปเดตชื่อทันที
   const { unreadCount } = useAlertStore();
   const { openModal } = useModalStore();
 
   const performLogout = async () => {
+    // ... (Logout Logic เดิม) ...
     try {
-      await fetch('/api/auth/logout', { 
-        method: 'POST',
-      });
-
-      logout();
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.clear();
-        window.localStorage.removeItem('auth-storage');
+        await fetch('/api/auth/logout', { method: 'POST' });
+        logout();
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.clear();
+          window.localStorage.removeItem('auth-storage');
+        }
+        toast.success('ออกจากระบบสำเร็จ');
+        window.location.href = '/admin/login';
+      } catch (error) {
+        logout();
+        window.location.href = '/admin/login';
       }
-
-      toast.success('ออกจากระบบสำเร็จ');
-
-      window.location.href = '/admin/login';
-
-    } catch (error) {
-      console.error('Logout error:', error);
-      toast.error('เกิดข้อผิดพลาด');
-
-      logout();
-      window.location.href = '/admin/login';
-    }
   };
 
-  const handleLogoutClick = () => {
+  const handleLogoutClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // กันไม่ให้ Dialog เด้งตอนกด Logout
     openModal({
       type: 'confirm',
       title: 'ยืนยันการออกจากระบบ',
@@ -57,7 +52,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           <Menu className="w-6 h-6" />
         </button>
         <h1 className="text-xl font-bold text-gray-800">
-          Smart Watch Monitoring
+          AFE PLUS
         </h1>
       </div>
 
@@ -72,27 +67,49 @@ export function Header({ onMenuClick }: HeaderProps) {
           )}
         </button>
 
-        {/* User Menu */}
-        <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-          <div className="text-right">
-            <p className="text-sm font-medium text-gray-800">
-              {user?.firstName} {user?.lastName}
-            </p>
-            <p className="text-xs text-gray-500">ผู้ดูแลระบบ</p>
-          </div>
-          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-            <User className="w-6 h-6 text-white" />
-          </div>
-          
-          {/* ปุ่ม Logout เรียก handleLogoutClick */}
-          <button
-            onClick={handleLogoutClick}
-            className="p-2 hover:bg-red-50 rounded-lg text-gray-600 hover:text-red-600 transition-colors"
-            title="ออกจากระบบ"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
+        {/* ✅ User Menu & Profile Edit */}
+        {/* ใช้ ProfileDialog ครอบส่วนนี้เพื่อให้กดแล้วเด้งหน้าแก้ไข */}
+        <ProfileDialog 
+            userId={user?.id || 0}
+            onUpdateSuccess={(newData : any) => {
+                // อัปเดตชื่อในหน้าจอทันทีโดยไม่ต้องรีเฟรช
+                if (user) {
+                    setUser({ ...user, firstName: newData.firstName, lastName: newData.lastName });
+                }
+            }}
+            trigger={
+                <div className="flex items-center gap-3 pl-4 border-l border-gray-200 cursor-pointer group hover:bg-gray-50 p-2 rounded-xl transition-all">
+                    <div className="text-right hidden sm:block">
+                        <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700 transition-colors">
+                            {user?.firstName} {user?.lastName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                            {/* แสดงตำแหน่ง ถ้าไม่มีใช้คำว่า ผู้ดูแลระบบ */}
+                            ผู้ดูแลระบบ
+                        </p>
+                    </div>
+                    
+                    <div className="relative">
+                        <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center ring-2 ring-white shadow-sm group-hover:ring-blue-100">
+                            <User className="w-6 h-6 text-white" />
+                        </div>
+                        {/* ไอคอนแก้ไขเล็กๆ */}
+                        <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm border border-gray-100 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <ChevronDown className="w-3 h-3 text-gray-500" />
+                        </div>
+                    </div>
+                    
+                    {/* ปุ่ม Logout (แยกออกมาเพื่อไม่ให้กดโดนแล้วเด้ง Dialog แก้ไข) */}
+                    <button
+                        onClick={handleLogoutClick}
+                        className="p-2 ml-2 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors border border-transparent hover:border-red-100"
+                        title="ออกจากระบบ"
+                    >
+                        <LogOut className="w-5 h-5" />
+                    </button>
+                </div>
+            }
+        />
       </div>
     </header>
   );

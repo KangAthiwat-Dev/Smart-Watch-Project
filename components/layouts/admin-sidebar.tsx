@@ -100,7 +100,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       >
         <div className="flex flex-col h-full">
           <div className="p-6 border-b border-gray-800">
-            <h2 className="text-2xl font-bold">SmartWatch</h2>
+            <h2 className="text-2xl font-bold">AFE PLUS</h2>
             <p className="text-sm text-gray-400 mt-1">Monitoring System</p>
           </div>
 
