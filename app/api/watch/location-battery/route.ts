@@ -22,9 +22,9 @@ async function handleRequest(request: Request) {
     const lng = parseFloat(String(rawLng));
 
     // // 🛑 กฏเหล็ก 1: ป้องกันพิกัด 0,0 (Ignored)
-    // if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) {
-    //     return NextResponse.json({ success: true, message: "Ignored 0,0" });
-    // }
+    if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) {
+        return NextResponse.json({ success: true, message: "Ignored 0,0" });
+    }
 
     if (!targetId) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
 
@@ -71,7 +71,7 @@ async function handleRequest(request: Request) {
     if (statusInt === 0) {
         currentDBStatus = 'SAFE';
         // ถ้าเคยแจ้งเตือนอะไรไปบ้าง ให้บอกว่ากลับถึงบ้านแล้ว
-        if ((isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent)&& (lat != 0 && lng != 0)) {
+        if (isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent) {
             shouldSendLine = true;
             alertType = 'BACK_SAFE';
             // รีเซ็ตหมด
