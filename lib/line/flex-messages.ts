@@ -522,18 +522,66 @@ export const createWatchConnectionBubble = (caregiverProfile: CaregiverProfile, 
 };
 
 // =================================================================
-// 🤝 6. Borrow/Return - Blue Premium Theme
+// 🤝 6. Borrow/Return - Blue Premium Theme (Support Status Colors)
 // =================================================================
 export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorrow: any): FlexBubble => {
 
-    const liffBase = process.env.LIFF_BASE_URL!; 
+    const liffBase = process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
     
-    const isBorrowing = !!activeBorrow;
-    
+    // ดึงสถานะปัจจุบัน (ถ้าไม่มีคือ NONE)
+    const status = activeBorrow?.status || 'NONE'; 
+    const isBorrowing = status !== 'NONE';
+
     const borrowUrl = `${liffBase}/equipment/borrow`;
+    // ถ้ามี ID ให้ส่งไปหน้า ID เพื่อเช็คสถานะได้
     const returnUrl = activeBorrow?.id 
         ? `${liffBase}/equipment/return/${activeBorrow.id}` 
         : `${liffBase}/equipment/return`;
+
+    // 🎨 ตั้งค่าสีและข้อความตามสถานะ
+    let statusText = "⚪ ยังไม่มีรายการยืม";
+    let statusColor = "#475569"; // เทา
+    let statusBgStart = "#F8FAFC";
+    let statusBgEnd = "#F1F5F9";
+    let borderColor = "#CBD5E1";
+    let equipmentName = "-";
+
+    if (isBorrowing) {
+        equipmentName = activeBorrow.items?.[0]?.equipment?.name || "อุปกรณ์";
+
+        switch (status) {
+            case 'PENDING': // รออนุมัติ (เหลือง)
+                statusText = "⏳ รอการอนุมัติ";
+                statusColor = "#D97706"; // เหลืองเข้ม
+                statusBgStart = "#FFFBEB"; // เหลืองอ่อนมาก
+                statusBgEnd = "#FEF3C7";
+                borderColor = "#FCD34D";
+                break;
+            case 'APPROVED': // อนุมัติแล้ว/กำลังยืม (เขียว)
+                statusText = "🟢 กำลังยืมอุปกรณ์";
+                statusColor = "#059669"; // เขียวเข้ม
+                statusBgStart = "#ECFDF5"; 
+                statusBgEnd = "#D1FAE5";
+                borderColor = "#6EE7B7";
+                break;
+            case 'REJECTED': // ไม่อนุมัติ (แดง)
+                statusText = "🔴 ไม่อนุมัติ";
+                statusColor = "#DC2626"; 
+                statusBgStart = "#FEF2F2";
+                statusBgEnd = "#FEE2E2";
+                borderColor = "#FCA5A5";
+                break;
+            case 'RETURN_PENDING': // รอตรวจคืน (ส้ม)
+                statusText = "🟠 รอตรวจสอบการคืน";
+                statusColor = "#EA580C"; 
+                statusBgStart = "#FFF7ED";
+                statusBgEnd = "#FFEDD5";
+                borderColor = "#FDBA74";
+                break;
+            default: // อื่นๆ (เช่น คืนแล้ว)
+                statusText = "⚪ จบรายการแล้ว";
+        }
+    }
 
     return {
         type: "bubble", 
@@ -558,66 +606,35 @@ export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorro
                     cornerRadius: "xxl",
                     margin: "none",
                     contents: [
-                        { 
-                            type: "text", 
-                            text: "ยืม-คืนครุภัณฑ์", 
-                            weight: "bold", 
-                            size: "xl", 
-                            color: "#FFFFFF", 
-                            align: "center" 
-                        },
-                        { 
-                            type: "text", 
-                            text: "ระบบจัดการอุปกรณ์", 
-                            size: "xs", 
-                            color: "#DBEAFE", 
-                            align: "center", 
-                            margin: "sm" 
-                        }
+                        { type: "text", text: "ยืม-คืนครุภัณฑ์", weight: "bold", size: "xl", color: "#FFFFFF", align: "center" },
+                        { type: "text", text: "ระบบจัดการอุปกรณ์", size: "xs", color: "#DBEAFE", align: "center", margin: "sm" }
                     ]
                 },
-                // Status Box
+                // Status Box (Dynamic Color)
                 {
                     type: "box", 
                     layout: "vertical", 
-                    background: isBorrowing 
-                        ? { 
-                            type: "linearGradient", 
-                            angle: "90deg", 
-                            startColor: "#ECFDF5", 
-                            endColor: "#D1FAE5" 
-                        }
-                        : { 
-                            type: "linearGradient", 
-                            angle: "90deg", 
-                            startColor: "#F8FAFC", 
-                            endColor: "#F1F5F9" 
-                        }, 
+                    background: { 
+                        type: "linearGradient", 
+                        angle: "90deg", 
+                        startColor: statusBgStart, 
+                        endColor: statusBgEnd 
+                    }, 
                     cornerRadius: "xl", 
                     paddingAll: "xl", 
                     borderWidth: "2px", 
-                    borderColor: isBorrowing ? "#A7F3D0" : "#CBD5E1",
+                    borderColor: borderColor,
                     margin: "lg",
                     contents: [
-                        { 
+                        { type: "text", text: statusText, weight: "bold", color: statusColor, align: "center", size: "md" },
+                        ...(isBorrowing ? [{ 
                             type: "text", 
-                            text: isBorrowing ? "🟢 กำลังยืมอุปกรณ์" : "⚪ ยังไม่มีรายการยืม", 
-                            weight: "bold", 
-                            color: isBorrowing ? "#065F46" : "#475569", 
+                            text: equipmentName, 
+                            size: "sm", 
+                            color: statusColor, // ใช้สีเดียวกับสถานะเพื่อคุมโทน
                             align: "center", 
-                            size: "md" 
-                        },
-                        // เช็คว่ามี items ไหมก่อนดึงชื่อ กัน Error
-                        ...(isBorrowing && activeBorrow.items && activeBorrow.items.length > 0
-                            ? [{ 
-                                type: "text", 
-                                text: activeBorrow.items[0]?.equipment?.name || "อุปกรณ์", 
-                                size: "sm", 
-                                color: "#047857", 
-                                align: "center", 
-                                margin: "md" 
-                            } as const] 
-                            : [])
+                            margin: "md",
+                        } as const] : [])
                     ]
                 },
                 // Buttons
@@ -632,29 +649,17 @@ export const createBorrowReturnFlexMessage = (caregiverProfile: any, activeBorro
                             style: "primary", 
                             color: "#10B981", 
                             height: "md", 
-                            action: { 
-                                type: "uri", 
-                                label: "ทำรายการยืม", 
-                                uri: borrowUrl 
-                            } 
+                            action: { type: "uri", label: "ทำรายการยืมใหม่", uri: borrowUrl } 
                         },
                         { 
                             type: "button", 
-                            style: isBorrowing ? "primary" : "secondary", 
-                            color: isBorrowing ? "#3B82F6" : "#94A3B8", 
+                            style: status === 'APPROVED' ? "primary" : "secondary", 
+                            // ถ้า Approved เป็นสีฟ้า (กดคืนได้) ถ้าอื่น ๆ เป็นสีเทา (กดดูสถานะ)
+                            color: status === 'APPROVED' ? "#3B82F6" : "#94A3B8", 
                             height: "md", 
-                            // ถ้ามีของยืม ให้เป็นลิ้งค์คืน / ถ้าไม่มี ให้เป็นปุ่มหลอก (Postback)
                             action: isBorrowing 
-                                ? { 
-                                    type: "uri", 
-                                    label: "ทำรายการคืน", 
-                                    uri: returnUrl 
-                                } 
-                                : { 
-                                    type: "postback", 
-                                    label: "ทำรายการคืน", 
-                                    data: "no_action" 
-                                } 
+                                ? { type: "uri", label: status === 'APPROVED' ? "ทำรายการคืน" : "ดูรายละเอียดสถานะ", uri: returnUrl } 
+                                : { type: "postback", label: "ทำรายการคืน", data: "no_action" } 
                         }
                     ]
                 }
