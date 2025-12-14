@@ -274,3 +274,43 @@ export async function createReturnRequest(borrowId: number) {
         return { success: false, error: 'ทำรายการไม่สำเร็จ' };
     }
 }
+
+export async function addBulkEquipment(items: { name: string; code: string }[]) {
+  try {
+    // กรองเอา Code ที่ซ้ำออกก่อน (ถ้าต้องการ) หรือให้ DB จัดการ
+    // ในที่นี้ใช้ createMany จะเร็วกว่า loop create ทีละอัน
+    
+    // หมายเหตุ: createMany ไม่รองรับ SQLite (ถ้า dev ใช้ sqlite ต้อง loop เอา)
+    // แต่ถ้าใช้ Postgres/MySQL ใช้ createMany ได้เลย
+    
+    // ตรวจสอบ Code ซ้ำใน DB ก่อน (Optional)
+    const codes = items.map(i => i.code);
+    const existing = await prisma.equipment.findMany({
+        where: { code: { in: codes } },
+        select: { code: true }
+    });
+
+    if (existing.length > 0) {
+        const existingCodes = existing.map(e => e.code).join(', ');
+        return { success: false, error: `รหัสครุภัณฑ์เหล่านี้มีอยู่แล้ว: ${existingCodes}` };
+    }
+
+    // บันทึกลง DB
+    await prisma.equipment.createMany({
+      data: items.map(item => ({
+        name: item.name,
+        code: item.code,
+        isActive: true,
+        status: 'AVAILABLE' // หรือค่า default อื่นๆ ตาม schema ของนายน้อย
+      })),
+      skipDuplicates: true, // ข้ามอันที่ซ้ำ (ถ้า DB รองรับ)
+    });
+    
+    revalidatePath('/admin/equipment'); // เปลี่ยน path ให้ตรงกับหน้าที่นายน้อยใช้งาน
+    return { success: true };
+
+  } catch (error) {
+    console.error("Bulk create error:", error);
+    return { success: false, error: 'เพิ่มข้อมูลไม่สำเร็จ อาจมีรหัสซ้ำ' };
+  }
+}

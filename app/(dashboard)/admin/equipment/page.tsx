@@ -22,7 +22,7 @@ export default async function EquipmentPage() {
       </div>
       
       <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="border-b bg-slate-50/50">
+        <CardHeader className=" bg-slate-50/50">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-blue-600" />
             <CardTitle>รายการอุปกรณ์ทั้งหมด ({equipments?.length || 0})</CardTitle>

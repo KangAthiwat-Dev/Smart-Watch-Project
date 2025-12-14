@@ -57,9 +57,16 @@ export function EquipmentTable({ data }: { data: any[] }) {
 
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+      {/* ✅ แก้ไข CSS Container: 
+         - max-h-[calc(100vh-200px)]: จำกัดความสูงไม่ให้เกินหน้าจอ (ลบ Header/Padding ออก) 
+         - overflow-y-auto: ให้ Scroll แนวตั้งได้
+         - relative: เพื่อให้ sticky header ทำงานเทียบกับกล่องนี้
+      */}
+      <div className="relative overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] rounded-xl border border-gray-200 shadow-sm scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
         <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
+          
+          {/* ✅ Sticky Header: หัวตารางจะลอยค้างไว้ตอนเลื่อนลง */}
+          <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500 font-medium border-b border-gray-200 shadow-sm">
             <tr>
               <th className="px-6 py-3 w-[150px]">รหัสครุภัณฑ์</th>
               <th className="px-6 py-3">ชื่ออุปกรณ์</th>
@@ -68,6 +75,7 @@ export function EquipmentTable({ data }: { data: any[] }) {
               <th className="px-6 py-3 text-right">จัดการ</th>
             </tr>
           </thead>
+          
           <tbody className="bg-white divide-y divide-gray-100">
             {data.map((item) => {
                 const isBorrowed = item.borrowItems.length > 0;
@@ -129,7 +137,7 @@ export function EquipmentTable({ data }: { data: any[] }) {
         </table>
       </div>
 
-      {/* ✅ Modal แจ้งเตือนสวยๆ */}
+      {/* ✅ Modal แจ้งเตือนสวยๆ (เหมือนเดิม) */}
       <AlertDialog open={!!targetDelete} onOpenChange={(open) => !open && setTargetDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
