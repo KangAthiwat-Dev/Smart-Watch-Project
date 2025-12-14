@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import liff from '@line/liff';
 import { GoogleMap, useJsApiLoader, OverlayView, DirectionsRenderer } from '@react-google-maps/api';
 import { updateRescuerLocation } from '@/actions/rescue.actions';
-import { MapPin, Navigation } from 'lucide-react';
+import { Navigation, Crosshair } from 'lucide-react';
 
 export default function RescueFormPage() {
     const searchParams = useSearchParams();
@@ -22,13 +22,15 @@ export default function RescueFormPage() {
     const [details, setDetails] = useState("");
     const [victimLoc, setVictimLoc] = useState<{lat: number, lng: number} | null>(null);
 
-    // Map State
+    // Map & Tracking State
     const [myLoc, setMyLoc] = useState<{lat: number, lng: number} | null>(null);
+    const [mapCenter, setMapCenter] = useState<{lat: number, lng: number} | null>(null); // ✅ ใช้คุม Center แยกต่างหาก
     const [directions, setDirections] = useState<any>(null);
     
-    // Tracking Refs
+    // Refs
+    const mapRef = useRef<google.maps.Map | null>(null);
     const watchIdRef = useRef<number | null>(null);
-    const lastSentRef = useRef<number>(0); // ✅ เอาไว้จำเวลาล่าสุดที่ส่ง (กันกระตุก)
+    const lastSentRef = useRef<number>(0);
 
     // UI State
     const [loading, setLoading] = useState(true);
@@ -39,7 +41,7 @@ export default function RescueFormPage() {
 
     const STORAGE_KEY = `rescue_owner_${alertId}`;
 
-    // 1. Init
+    // 1. Init Data
     useEffect(() => {
         const init = async () => {
             try {
@@ -50,7 +52,10 @@ export default function RescueFormPage() {
                 const data = await res.json();
 
                 if (data.lat && data.lng) {
-                    setVictimLoc({ lat: parseFloat(data.lat), lng: parseFloat(data.lng) });
+                    const vLoc = { lat: parseFloat(data.lat), lng: parseFloat(data.lng) };
+                    setVictimLoc(vLoc);
+                    // เริ่มต้นให้แมพอยู่ตรงกลางระหว่างคนเจ็บ (หรือรอ GPS เรา)
+                    setMapCenter(vLoc);
                 }
 
                 const isOwner = localStorage.getItem(STORAGE_KEY) === 'true';
@@ -77,11 +82,10 @@ export default function RescueFormPage() {
             setLoading(false);
         };
         init();
-
         return () => stopTracking();
     }, [alertId]);
 
-    // 2. Routing
+    // 2. Routing (คำนวณเส้นทางครั้งเดียวพอ หรือเมื่อเปลี่ยนเป้าหมาย)
     useEffect(() => {
         if (isLoaded && myLoc && victimLoc) {
             const service = new google.maps.DirectionsService();
@@ -93,42 +97,45 @@ export default function RescueFormPage() {
                 if (status === 'OK') setDirections(result);
             });
         }
-    }, [isLoaded, myLoc, victimLoc]);
+    }, [isLoaded, myLoc, victimLoc]); // myLoc เปลี่ยน Route เปลี่ยนได้ แต่ Map จะไม่ขยับมั่วเพราะ preserveViewport
 
     // ---------------------------------------------
-    // 🛰️ GPS Logic (ลบ Wake Lock ออกแล้ว)
+    // 🛰️ GPS Logic
     // ---------------------------------------------
     const startTracking = async () => {
         if (!('geolocation' in navigator)) return;
-        
-        // ❌ เอา Wake Lock ออกแล้วครับ (ตามสั่ง)
 
         watchIdRef.current = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude } = pos.coords;
                 
-                // 1. อัปเดตหน้าจอตัวเองทันที (เพื่อให้จุดสีน้ำเงินลื่นไหล)
+                // อัปเดตพิกัดตัวเอง (จุดสีน้ำเงินขยับ)
                 setMyLoc({ lat: latitude, lng: longitude });
-                
-                // 2. ส่ง Server: แต่ส่งแค่ทุกๆ 5 วินาทีพอ (กันกระตุก)
+
+                // *หมายเหตุ: เราไม่สั่ง setMapCenter ที่นี่ แมพเลยจะไม่เด้งตาม*
+
+                // ส่ง Server (Throttle 5 วิ)
                 const now = Date.now();
-                if (alertId && (now - lastSentRef.current > 5000)) { // 5000ms = 5 วิ
+                if (alertId && (now - lastSentRef.current > 5000)) { 
                     updateRescuerLocation(alertId, latitude, longitude);
                     lastSentRef.current = now;
-                    console.log("📍 Server Updated");
                 }
             },
             (err) => console.error(err),
-            { 
-                enableHighAccuracy: true, 
-                timeout: 10000, 
-                maximumAge: 0 
-            }
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
     };
 
     const stopTracking = () => {
         if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+
+    // ปุ่มกดเพื่อดึงกล้องกลับมาหาเรา
+    const handleRecenter = () => {
+        if (myLoc && mapRef.current) {
+            mapRef.current.panTo(myLoc);
+            mapRef.current.setZoom(17);
+        }
     };
 
     // ---------------------------------------------
@@ -137,7 +144,6 @@ export default function RescueFormPage() {
     const handleAccept = async () => {
         if (!name.trim()) return setErrorMsg("กรุณาระบุชื่อผู้ช่วยเหลือ");
         if (phone.length !== 10 || !phone.startsWith('0')) return setErrorMsg("เบอร์โทรศัพท์ต้องมี 10 หลัก");
-        
         setActionLoading(true);
         setErrorMsg("");
 
@@ -178,7 +184,6 @@ export default function RescueFormPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'close', alertId, details })
             });
-
             if (res.ok) {
                 localStorage.removeItem(STORAGE_KEY);
                 stopTracking();
@@ -193,7 +198,7 @@ export default function RescueFormPage() {
     // ---------------------------------------------
     // Render
     // ---------------------------------------------
-    if (loading) return <div className="h-screen bg-[#FFFBF5] flex items-center justify-center text-gray-400">⏳ กำลังโหลดข้อมูล...</div>;
+    if (loading) return <div className="h-screen bg-[#FFFBF5] flex items-center justify-center text-gray-400">⏳ กำลังโหลด...</div>;
 
     if (status === "locked") return (
         <div className="h-screen bg-gray-100 flex flex-col items-center justify-center p-6 text-center">
@@ -216,35 +221,33 @@ export default function RescueFormPage() {
     const isAccepted = status === "accepted";
 
     return (
-        <div className="min-h-screen bg-[#FFFBF5] font-sans pb-10">
+        <div className="min-h-screen bg-[#FFFBF5] font-sans pb-10 flex flex-col gap-6">
             
-            {/* 🗺️ MAP SECTION */}
-            <div className="relative mx-4 mt-4 h-[320px] rounded-[32px] border-[6px] border-white shadow-2xl overflow-hidden z-0 bg-slate-100">
-                {isLoaded && victimLoc ? (
+            {/* 🗺️ MAP SECTION (แยกส่วนชัดเจน) */}
+            <div className="relative mx-4 mt-6 h-[320px] rounded-[32px] border-[6px] border-white shadow-xl overflow-hidden bg-slate-100 shrink-0">
+                {isLoaded && mapCenter ? (
                     <GoogleMap
                         mapContainerStyle={{ width: '100%', height: '100%' }}
-                        center={myLoc || victimLoc} 
+                        center={mapCenter} // ใช้ State เริ่มต้นครั้งเดียว
                         zoom={15}
+                        onLoad={map => { mapRef.current = map; }} // เก็บ Ref ไว้คุมกล้อง
                         options={{ 
                             disableDefaultUI: true, 
                             zoomControl: false,
-                            // เปลี่ยนสไตล์แผนที่ให้ดูคลีนขึ้น (Optional)
-                            styles: [
-                                { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }
-                            ]
                         }}
                     >
                         {/* 🔴 จุดคนเจ็บ */}
-                        <OverlayView position={victimLoc} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
-                             <div className="relative flex items-center justify-center w-12 h-12 -translate-x-1/2 -translate-y-1/2">
-                                <div className="absolute w-full h-full rounded-full bg-red-500 opacity-30 animate-ping"></div>
-                                <div className="relative w-4 h-4 border-2 border-white rounded-full bg-red-600 shadow-md"></div>
-                                {/* ป้ายชื่อแบบลอย */}
-                                <div className="absolute top-full mt-2 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full text-[10px] font-bold text-red-600 shadow-sm border border-red-100 whitespace-nowrap">
-                                    📍 ผู้ประสบเหตุ
+                        {victimLoc && (
+                            <OverlayView position={victimLoc} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+                                <div className="relative flex items-center justify-center w-12 h-12 -translate-x-1/2 -translate-y-1/2">
+                                    <div className="absolute w-full h-full rounded-full bg-red-500 opacity-30 animate-ping"></div>
+                                    <div className="relative w-4 h-4 border-2 border-white rounded-full bg-red-600 shadow-md"></div>
+                                    <div className="absolute top-full mt-2 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full text-[10px] font-bold text-red-600 shadow-sm border border-red-100 whitespace-nowrap">
+                                        📍 ผู้ประสบเหตุ
+                                    </div>
                                 </div>
-                             </div>
-                        </OverlayView>
+                            </OverlayView>
+                        )}
 
                         {/* 🔵 จุดเรา (Rescuer) */}
                         {isAccepted && myLoc && (
@@ -253,38 +256,40 @@ export default function RescueFormPage() {
                                     <div className="relative w-5 h-5 border-2 border-white rounded-full bg-blue-500 shadow-lg flex items-center justify-center z-10">
                                         <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                                     </div>
-                                    {/* เรดาร์หมุนๆ */}
                                     <div className="absolute w-16 h-16 border border-blue-400/30 rounded-full animate-[spin_3s_linear_infinite] border-t-transparent border-l-transparent"></div>
-                                    <div className="absolute bottom-full mb-2 px-3 py-1 bg-blue-600 text-white text-[10px] font-bold rounded-full shadow-lg whitespace-nowrap z-20">
-                                        👮‍♂️ คุณ (จนท.)
-                                    </div>
                                 </div>
                             </OverlayView>
                         )}
 
-                        {/* 🛣️ เส้นทาง */}
+                        {/* 🛣️ เส้นทาง (✅ Fix: preserveViewport = true) */}
                         {directions && (
                             <DirectionsRenderer 
                                 directions={directions} 
                                 options={{ 
                                     suppressMarkers: true, 
-                                    polylineOptions: { 
-                                        strokeColor: "#3B82F6", 
-                                        strokeWeight: 6, 
-                                        strokeOpacity: 0.8 
-                                    } 
+                                    preserveViewport: true, // 👈 พระเอกของเรา! หยุดแย่งกล้อง
+                                    polylineOptions: { strokeColor: "#3B82F6", strokeWeight: 6, strokeOpacity: 0.8 } 
                                 }} 
                             />
                         )}
                     </GoogleMap>
                 ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 animate-pulse bg-slate-50">
-                        <MapPin className="w-8 h-8 mb-2 opacity-50" />
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 animate-pulse">
                         <span className="text-xs">กำลังโหลดแผนที่...</span>
                     </div>
                 )}
                 
-                {/* ปุ่มนำทาง (ดีไซน์ใหม่เป็นปุ่มกลมลอย) */}
+                {/* ปุ่ม Recenter (เป้า) */}
+                {isAccepted && (
+                    <button 
+                        onClick={handleRecenter}
+                        className="absolute bottom-4 right-4 w-12 h-12 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center active:scale-90 transition-all z-10 hover:bg-blue-700"
+                    >
+                        <Crosshair size={24} />
+                    </button>
+                )}
+
+                {/* ปุ่มนำทาง Google Maps */}
                 {victimLoc && (
                     <a 
                         href={`https://www.google.com/maps/dir/?api=1&destination=${victimLoc.lat},${victimLoc.lng}`}
@@ -296,9 +301,9 @@ export default function RescueFormPage() {
                 )}
             </div>
 
-            {/* FORM SECTION */}
-            <div className="px-6 -mt-6 relative z-10">
-                <div className="bg-white p-6 rounded-[24px] shadow-xl shadow-orange-100/50 border border-orange-50 space-y-4">
+            {/* FORM SECTION (แยกออกมาแล้ว) */}
+            <div className="px-6 flex-1">
+                <div className="bg-white p-6 rounded-[24px] shadow-sm border border-slate-100 space-y-4">
                     
                     <div className="mb-2">
                         <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
@@ -309,7 +314,6 @@ export default function RescueFormPage() {
 
                     {errorMsg && <div className="bg-red-50 text-red-500 text-xs p-3 rounded-xl">⚠️ {errorMsg}</div>}
 
-                    {/* ช่องกรอกข้อมูล */}
                     <div>
                         <label className="text-xs font-bold text-gray-400 ml-1">ชื่อผู้ช่วยเหลือ</label>
                         <input 
@@ -336,7 +340,6 @@ export default function RescueFormPage() {
                             />
                         </div>
 
-                        {/* ปุ่มรับเคส */}
                         <button 
                             onClick={handleAccept}
                             disabled={isAccepted || actionLoading}
@@ -351,9 +354,16 @@ export default function RescueFormPage() {
                         </button>
                     </div>
 
-                    {/* ส่วนปิดเคส */}
                     {isAccepted && (
                         <div className="pt-4 border-t border-dashed border-gray-100 animate-fade-in-up">
+                            <div className="mb-4 bg-blue-50 p-3 rounded-xl flex items-center gap-3 border border-blue-100">
+                                <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse shadow-blue-300 shadow-md"></div>
+                                <div className="text-xs text-blue-700">
+                                    <span className="font-bold">GPS Tracking Active</span>
+                                    <br/>ระบบกำลังส่งพิกัดของคุณ
+                                </div>
+                            </div>
+
                             <div className="mb-4">
                                 <label className="text-xs font-bold text-gray-400 ml-1">รายละเอียดอาการ / การช่วยเหลือ</label>
                                 <textarea 
@@ -375,12 +385,6 @@ export default function RescueFormPage() {
                         </div>
                     )}
                 </div>
-                
-                {!isAccepted && (
-                    <p className="text-center text-gray-300 text-xs mt-6">
-                        เมื่อรับเคสแล้ว ระบบจะส่งพิกัดของคุณไปยังศูนย์ฯ
-                    </p>
-                )}
             </div>
         </div>
     );
