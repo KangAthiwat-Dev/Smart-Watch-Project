@@ -57,12 +57,7 @@ export function EquipmentTable({ data }: { data: any[] }) {
 
   return (
     <>
-      {/* ✅ แก้ไข CSS Container: 
-         - max-h-[calc(100vh-200px)]: จำกัดความสูงไม่ให้เกินหน้าจอ (ลบ Header/Padding ออก) 
-         - overflow-y-auto: ให้ Scroll แนวตั้งได้
-         - relative: เพื่อให้ sticky header ทำงานเทียบกับกล่องนี้
-      */}
-      <div className="relative overflow-x-auto overflow-y-auto max-h-[calc(100vh-310px)] rounded-xl border border-gray-200 shadow-sm scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+      <div className="relative overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] rounded-xl border border-gray-200 shadow-sm scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
         <table className="w-full text-sm text-left">
           
           {/* ✅ Sticky Header: หัวตารางจะลอยค้างไว้ตอนเลื่อนลง */}

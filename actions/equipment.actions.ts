@@ -314,3 +314,102 @@ export async function addBulkEquipment(items: { name: string; code: string }[]) 
     return { success: false, error: 'เพิ่มข้อมูลไม่สำเร็จ อาจมีรหัสซ้ำ' };
   }
 }
+
+export async function getTransactionById(id: number) {
+  try {
+    const transaction = await prisma.borrowEquipment.findUnique({
+      where: { id },
+      include: {
+        borrower: true, // เอาข้อมูลคนยืม
+        dependent: true, // เอาข้อมูลผู้สูงอายุ
+        items: {
+          include: {
+            equipment: true, // เอาชื่ออุปกรณ์
+          }
+        },
+        // ถ้ามีรูปตอนคืนของ (returnImages) ก็ดึงมาด้วย (ถ้า Schema มี)
+        // returnImages: true 
+      }
+    });
+
+    if (!transaction) {
+      return { success: false, error: "ไม่พบรายการ" };
+    }
+
+    return { success: true, data: transaction };
+
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: "เกิดข้อผิดพลาดในการดึงข้อมูล" };
+  }
+}
+
+export async function updateTransactionStatus(transactionId: number, status: string) {
+  try {
+    // 1. ดึงข้อมูล Transaction เดิมมาก่อน เพื่อดูว่ามีอุปกรณ์อะไรบ้าง
+    const transaction = await prisma.borrowEquipment.findUnique({
+      where: { id: transactionId },
+      include: { items: true }
+    });
+
+    if (!transaction) return { success: false, error: "ไม่พบรายการ" };
+
+    // 2. เตรียมข้อมูลอัปเดต
+    let updateData: any = { status };
+    let equipmentUpdateStatus = ""; // สถานะอุปกรณ์ที่จะเปลี่ยนไป
+
+    // Logic จัดการวันที่และสต็อก
+    if (status === 'APPROVED') {
+        updateData.borrowApprovedAt = new Date();
+        // ถ้าอนุมัติ -> ของต้องไม่ว่าง
+        equipmentUpdateStatus = 'UNAVAILABLE'; 
+        
+        // TODO: ปกติตรงนี้ต้องใส่ ID แอดมินคนอนุมัติด้วย 
+        // updateData.borrowApproverId = currentAdminId; 
+
+    } else if (status === 'RETURNED') {
+        updateData.returnApprovedAt = new Date();
+        // ถ้าคืนสำเร็จ -> ของกลับมาว่าง
+        equipmentUpdateStatus = 'AVAILABLE'; 
+        
+        // updateData.returnApproverId = currentAdminId;
+    } else if (status === 'REJECTED') {
+        // ถ้าปฏิเสธตอนขอยืม -> ของต้องว่างเหมือนเดิม (เผื่อจองไว้)
+        equipmentUpdateStatus = 'AVAILABLE';
+    }
+
+    // 3. เริ่ม Transaction (ทำทุกอย่างพร้อมกัน พังก็พังหมด ไม่ข้อมูลแหว่ง)
+    await prisma.$transaction(async (tx) => {
+        // 3.1 อัปเดตสถานะใบงาน
+        await tx.borrowEquipment.update({
+            where: { id: transactionId },
+            data: updateData
+        });
+
+        // 3.2 อัปเดตสถานะอุปกรณ์ (ถ้ามีการเปลี่ยนแปลง)
+        if (equipmentUpdateStatus) {
+            const equipmentIds = transaction.items.map(i => i.equipmentId);
+            
+            // อัปเดตทุกชิ้นในใบงานนี้
+            await tx.equipment.updateMany({
+                where: { id: { in: equipmentIds } },
+                data: { 
+                    // ตรงนี้ต้องดู Schema นายน้อยว่าใช้ field ไหนเก็บสถานะอุปกรณ์ 
+                    // (เช่น isActive หรือ status='AVAILABLE'/'BORROWED')
+                    // สมมติว่านายน้อยใช้ isActive (true=ว่าง, false=ไม่ว่าง/เสีย)
+                    // หรือถ้ามี field status ก็แก้ตรงนี้ได้เลยครับ
+                    // ตัวอย่าง:
+                    isActive: equipmentUpdateStatus === 'AVAILABLE' 
+                }
+            });
+        }
+    });
+
+    revalidatePath('/admin/transactions');
+    return { success: true };
+
+  } catch (error) {
+    console.error("Update Status Error:", error);
+    return { success: false, error: "เกิดข้อผิดพลาดในการอัปเดต" };
+  }
+}
