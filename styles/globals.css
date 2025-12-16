@@ -8,6 +8,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-weight: 400;
   }
   :root {
     --background: 0 0% 100%;

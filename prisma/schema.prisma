@@ -81,6 +81,9 @@ model User {
     adminProfile AdminProfile?
     caregiverProfile CaregiverProfile?
     dependentProfile DependentProfile?
+    transactionHistories TransactionHistory[]
+
+    approvedTransactions BorrowEquipment[] @relation("Approver")
 
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
@@ -329,7 +332,6 @@ model Equipment {
     code String @unique
     isActive Boolean @default(true)
 
-    // ✅ เพิ่มแค่อันนี้ (เพื่อให้รู้ว่าของว่างไหม)
     status EquipmentStatus @default(AVAILABLE)
   
     borrowItems BorrowEquipmentItem[]
@@ -355,6 +357,14 @@ model BorrowEquipment {
     status BorrowStatus @default(PENDING)
 
     items BorrowEquipmentItem[]
+
+    approverId Int?
+    approvedAt DateTime?
+    isEdited Boolean @default(false)
+    editReason String?
+    history       TransactionHistory[]
+    
+    approver      User?      @relation("Approver", fields: [approverId], references: [id])
 
     borrowApprovedAt DateTime? 
     returnApprovedAt DateTime?
@@ -384,4 +394,18 @@ model RescueGroup {
   updatedAt DateTime @updatedAt
 
   @@map("rescue_groups")
+}
+
+// ✅ สร้าง Model ใหม่สำหรับเก็บประวัติ
+model TransactionHistory {
+  id Int @id @default(autoincrement())
+  borrowId Int
+  borrowEquipment BorrowEquipment @relation(fields: [borrowId], references: [id], onDelete: Cascade)
+  
+  actorId Int      // ID ของคนที่ทำรายการ (Admin)
+  actor User @relation(fields: [actorId], references: [id])
+  
+  action String   // "APPROVE", "REJECT", "EDIT"
+  reason String?  // เหตุผล
+  createdAt DateTime @default(now())
 }

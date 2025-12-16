@@ -63,7 +63,7 @@ export function EquipmentTable({ data }: { data: any[] }) {
           {/* ✅ Sticky Header: หัวตารางจะลอยค้างไว้ตอนเลื่อนลง */}
           <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500 font-medium border-b border-gray-200 shadow-sm">
             <tr>
-              <th className="px-6 py-3 w-[150px]">รหัสครุภัณฑ์</th>
+              <th className="px-6 py-3 w-[300px]">รหัสครุภัณฑ์</th>
               <th className="px-6 py-3">ชื่ออุปกรณ์</th>
               <th className="px-6 py-3 text-center">สภาพเครื่อง</th>
               <th className="px-6 py-3 text-center">สถานะการยืม</th>

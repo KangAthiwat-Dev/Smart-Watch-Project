@@ -1,4 +1,7 @@
 /** @type {import('tailwindcss').Config} */
+
+import { fontFamily } from "tailwindcss/defaultTheme";
+
 module.exports = {
     darkMode: ["class"],
     content: [
@@ -10,6 +13,9 @@ module.exports = {
   ],
   theme: {
   	extend: {
+		fontFamily: {
+			sans: ["var(--font-sarabun)", ...fontFamily.sans],
+		},
   		colors: {
   			border: 'hsl(var(--border))',
   			background: 'hsl(var(--background))',

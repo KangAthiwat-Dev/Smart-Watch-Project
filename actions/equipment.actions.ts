@@ -1,10 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import prisma from '@/lib/db/prisma';
+import { prisma } from '@/lib/db/prisma';
 import { messagingApi } from "@line/bot-sdk"; 
-// ✅ Import ฟังก์ชันสร้าง Flex Message ที่แยกไว้มาใช้ (สวยและดูแลง่าย)
 import { createBorrowSuccessBubble, createReturnSuccessBubble } from '@/lib/line/flex-messages';
+import { getSession } from '@/lib/auth/session';
 
 // =================================================================
 // 🔧 ส่วนจัดการอุปกรณ์ (Admin CRUD)
@@ -80,8 +80,40 @@ export async function deleteEquipment(id: number) {
   }
 }
 
+export async function addBulkEquipment(items: { name: string; code: string }[]) {
+  try {
+    const codes = items.map(i => i.code);
+    const existing = await prisma.equipment.findMany({
+        where: { code: { in: codes } },
+        select: { code: true }
+    });
+
+    if (existing.length > 0) {
+        const existingCodes = existing.map(e => e.code).join(', ');
+        return { success: false, error: `รหัสครุภัณฑ์เหล่านี้มีอยู่แล้ว: ${existingCodes}` };
+    }
+
+    await prisma.equipment.createMany({
+      data: items.map(item => ({
+        name: item.name,
+        code: item.code,
+        isActive: true,
+        status: 'AVAILABLE'
+      })),
+      skipDuplicates: true,
+    });
+    
+    revalidatePath('/admin/equipment');
+    return { success: true };
+
+  } catch (error) {
+    console.error("Bulk create error:", error);
+    return { success: false, error: 'เพิ่มข้อมูลไม่สำเร็จ อาจมีรหัสซ้ำ' };
+  }
+}
+
 // =================================================================
-// 📦 ส่วนระบบยืม (Borrowing System)
+// 📦 ส่วนระบบยืม-คืน (Borrowing & Return System)
 // =================================================================
 
 export async function getAvailableEquipments() {
@@ -124,7 +156,7 @@ export async function createBorrowRequest(data: {
 
     if (!caregiverUser) return { success: false, error: 'ไม่พบข้อมูลผู้ยืม' };
 
-    // 2. บันทึกลง DB (Transaction)
+    // 2. บันทึกลง DB
     await prisma.$transaction(async (tx) => {
       const request = await tx.borrowEquipment.create({
         data: {
@@ -146,32 +178,24 @@ export async function createBorrowRequest(data: {
       }
     });
 
-    // 3. ส่ง Flex Message แจ้งเตือนผู้ยืม
-    // (แยก Try-Catch เพื่อให้ Database ไม่ Rollback ถ้า LINE Error)
+    // 3. ส่ง LINE
     const lineIdToSend = caregiverUser.lineId;
-
     if (lineIdToSend) {
         try {
             const { MessagingApiClient } = messagingApi;
-            // ใช้ Env ได้ทั้ง 2 แบบ กันพลาด
             const client = new MessagingApiClient({
                 channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.CHANNEL_ACCESS_TOKEN || '',
             });
-
-            // สร้าง Flex Message จากไฟล์ที่แยกไว้
             const flexMsg = createBorrowSuccessBubble(
                 `${caregiverUser.caregiverProfile?.firstName} ${caregiverUser.caregiverProfile?.lastName}`,
                 dependentProfile ? `${dependentProfile.firstName} ${dependentProfile.lastName}` : "-",
                 equipmentNames,
                 data.borrowDate
             );
-        
             await client.pushMessage({
                 to: lineIdToSend,
                 messages: [{ type: "flex", altText: "ได้รับคำขอยืมแล้ว", contents: flexMsg as any }]
             });
-            
-            console.log("✅ ส่ง LINE แจ้งยืมสำเร็จ");
         } catch (lineError) {
             console.error("⚠️ บันทึกสำเร็จ แต่ส่ง LINE ไม่ผ่าน:", lineError);
         }
@@ -186,11 +210,6 @@ export async function createBorrowRequest(data: {
   }
 }
 
-// =================================================================
-// ↩️ ส่วนระบบคืน (Return System)
-// =================================================================
-
-// 7. ดึงรายการที่ฉันยืมอยู่ (Status = APPROVED หรือ RETURN_PENDING)
 export async function getMyBorrowedEquipments(lineId: string) {
   try {
     const user = await prisma.user.findFirst({
@@ -203,12 +222,12 @@ export async function getMyBorrowedEquipments(lineId: string) {
     const borrows = await prisma.borrowEquipment.findMany({
         where: {
             borrowerId: user.caregiverProfile.id,
-            status: { in: ['APPROVED', 'RETURN_PENDING'] } // เอาเฉพาะที่ยังไม่คืน
+            status: { in: ['APPROVED', 'RETURN_PENDING'] }
         },
         include: {
-            dependent: true, // เอาชื่อผู้สูงอายุมาโชว์
+            dependent: true,
             items: {
-                include: { equipment: true } // เอาชื่ออุปกรณ์มาโชว์
+                include: { equipment: true }
             }
         },
         orderBy: { borrowDate: 'desc' }
@@ -222,26 +241,18 @@ export async function getMyBorrowedEquipments(lineId: string) {
   }
 }
 
-// 8. แจ้งคืนอุปกรณ์ (เปลี่ยนสถานะเป็น RETURN_PENDING)
 export async function createReturnRequest(borrowId: number) {
     try {
-        // 1. อัปเดตสถานะใน DB และดึงข้อมูลมาด้วยเพื่อส่ง LINE
         const updatedBorrow = await prisma.borrowEquipment.update({
             where: { id: borrowId },
-            data: { status: 'RETURN_PENDING' }, // สถานะรอเจ้าหน้าที่ตรวจสอบของจริง
+            data: { status: 'RETURN_PENDING' },
             include: {
-                borrower: {
-                    include: { user: true } // เพื่อเอา Line ID
-                },
-                items: {
-                    include: { equipment: true } // เพื่อเอาชื่ออุปกรณ์
-                }
+                borrower: { include: { user: true } },
+                items: { include: { equipment: true } }
             }
         });
 
-        // 2. ส่ง Flex Message แจ้งผู้ยืมว่า "ได้รับแจ้งคืนแล้ว"
         const lineId = updatedBorrow.borrower?.user?.lineId;
-        // ดึงชื่ออุปกรณ์ตัวแรกมาแสดง (ถ้ามีหลายชิ้นก็โชว์ตัวแรก + ฯลฯ ก็ได้ แต่นี้เอาตัวแรกไปก่อน)
         const equipmentName = updatedBorrow.items.length > 0 
             ? updatedBorrow.items[0].equipment.name 
             : "อุปกรณ์";
@@ -252,16 +263,11 @@ export async function createReturnRequest(borrowId: number) {
                 const client = new MessagingApiClient({
                     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.CHANNEL_ACCESS_TOKEN || '',
                 });
-
-                // สร้าง Flex Message ใบรับเรื่องคืน
                 const flexMsg = createReturnSuccessBubble(equipmentName, new Date());
-
                 await client.pushMessage({
                     to: lineId,
                     messages: [{ type: "flex", altText: "แจ้งคืนอุปกรณ์เรียบร้อย", contents: flexMsg as any }]
                 });
-                
-                console.log("✅ ส่ง LINE แจ้งคืนสำเร็จ");
             } catch (err) {
                 console.error("⚠️ แจ้งคืนสำเร็จ แต่ส่ง LINE ไม่ผ่าน:", err);
             }
@@ -275,67 +281,33 @@ export async function createReturnRequest(borrowId: number) {
     }
 }
 
-export async function addBulkEquipment(items: { name: string; code: string }[]) {
-  try {
-    // กรองเอา Code ที่ซ้ำออกก่อน (ถ้าต้องการ) หรือให้ DB จัดการ
-    // ในที่นี้ใช้ createMany จะเร็วกว่า loop create ทีละอัน
-    
-    // หมายเหตุ: createMany ไม่รองรับ SQLite (ถ้า dev ใช้ sqlite ต้อง loop เอา)
-    // แต่ถ้าใช้ Postgres/MySQL ใช้ createMany ได้เลย
-    
-    // ตรวจสอบ Code ซ้ำใน DB ก่อน (Optional)
-    const codes = items.map(i => i.code);
-    const existing = await prisma.equipment.findMany({
-        where: { code: { in: codes } },
-        select: { code: true }
-    });
-
-    if (existing.length > 0) {
-        const existingCodes = existing.map(e => e.code).join(', ');
-        return { success: false, error: `รหัสครุภัณฑ์เหล่านี้มีอยู่แล้ว: ${existingCodes}` };
-    }
-
-    // บันทึกลง DB
-    await prisma.equipment.createMany({
-      data: items.map(item => ({
-        name: item.name,
-        code: item.code,
-        isActive: true,
-        status: 'AVAILABLE' // หรือค่า default อื่นๆ ตาม schema ของนายน้อย
-      })),
-      skipDuplicates: true, // ข้ามอันที่ซ้ำ (ถ้า DB รองรับ)
-    });
-    
-    revalidatePath('/admin/equipment'); // เปลี่ยน path ให้ตรงกับหน้าที่นายน้อยใช้งาน
-    return { success: true };
-
-  } catch (error) {
-    console.error("Bulk create error:", error);
-    return { success: false, error: 'เพิ่มข้อมูลไม่สำเร็จ อาจมีรหัสซ้ำ' };
-  }
-}
+// =================================================================
+// 👑 ส่วน Admin จัดการคำขอ (Transaction Management)
+// =================================================================
 
 export async function getTransactionById(id: number) {
   try {
     const transaction = await prisma.borrowEquipment.findUnique({
       where: { id },
       include: {
-        borrower: true, // เอาข้อมูลคนยืม
-        dependent: true, // เอาข้อมูลผู้สูงอายุ
-        items: {
-          include: {
-            equipment: true, // เอาชื่ออุปกรณ์
-          }
+        borrower: true,
+        dependent: true,
+        items: { include: { equipment: true } },
+        // ✅ ดึงคนอนุมัติล่าสุด (พร้อม Profile)
+        approver: {
+          include: { adminProfile: true } 
         },
-        // ถ้ามีรูปตอนคืนของ (returnImages) ก็ดึงมาด้วย (ถ้า Schema มี)
-        // returnImages: true 
+        // ✅ ดึงประวัติการแก้ไข (พร้อมคนทำรายการ)
+        history: {
+          include: { 
+            actor: { include: { adminProfile: true } } 
+          },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
 
-    if (!transaction) {
-      return { success: false, error: "ไม่พบรายการ" };
-    }
-
+    if (!transaction) return { success: false, error: "ไม่พบรายการ" };
     return { success: true, data: transaction };
 
   } catch (error) {
@@ -344,9 +316,13 @@ export async function getTransactionById(id: number) {
   }
 }
 
-export async function updateTransactionStatus(transactionId: number, status: string) {
+export async function updateTransactionStatus(transactionId: number, status: string, reason?: string) {
   try {
-    // 1. ดึงข้อมูล Transaction เดิมมาก่อน เพื่อดูว่ามีอุปกรณ์อะไรบ้าง
+    const session = await getSession();
+    if (!session || !session.userId) {
+        return { success: false, error: "Unauthorized: กรุณาเข้าสู่ระบบ" };
+    }
+
     const transaction = await prisma.borrowEquipment.findUnique({
       where: { id: transactionId },
       include: { items: true }
@@ -354,53 +330,51 @@ export async function updateTransactionStatus(transactionId: number, status: str
 
     if (!transaction) return { success: false, error: "ไม่พบรายการ" };
 
-    // 2. เตรียมข้อมูลอัปเดต
-    let updateData: any = { status };
-    let equipmentUpdateStatus = ""; // สถานะอุปกรณ์ที่จะเปลี่ยนไป
+    // Update Data สำหรับ Table หลัก (เก็บสถานะล่าสุด)
+    let updateData: any = { 
+        status,
+        approverId: session.userId,   // คนอนุมัติล่าสุด
+        approvedAt: new Date(),       // เวลาล่าสุด
+        isEdited: transaction.status !== 'PENDING' && transaction.status !== 'RETURN_PENDING' // ถือว่าเป็นการแก้ไขถ้าไม่ใช่ Pending
+    };
 
-    // Logic จัดการวันที่และสต็อก
+    let equipmentUpdateStatus = "";
+
     if (status === 'APPROVED') {
         updateData.borrowApprovedAt = new Date();
-        // ถ้าอนุมัติ -> ของต้องไม่ว่าง
         equipmentUpdateStatus = 'UNAVAILABLE'; 
-        
-        // TODO: ปกติตรงนี้ต้องใส่ ID แอดมินคนอนุมัติด้วย 
-        // updateData.borrowApproverId = currentAdminId; 
-
     } else if (status === 'RETURNED') {
         updateData.returnApprovedAt = new Date();
-        // ถ้าคืนสำเร็จ -> ของกลับมาว่าง
-        equipmentUpdateStatus = 'AVAILABLE'; 
-        
-        // updateData.returnApproverId = currentAdminId;
+        equipmentUpdateStatus = 'AVAILABLE';
     } else if (status === 'REJECTED') {
-        // ถ้าปฏิเสธตอนขอยืม -> ของต้องว่างเหมือนเดิม (เผื่อจองไว้)
         equipmentUpdateStatus = 'AVAILABLE';
     }
 
-    // 3. เริ่ม Transaction (ทำทุกอย่างพร้อมกัน พังก็พังหมด ไม่ข้อมูลแหว่ง)
     await prisma.$transaction(async (tx) => {
-        // 3.1 อัปเดตสถานะใบงาน
+        // 1. อัปเดตตารางหลัก
         await tx.borrowEquipment.update({
             where: { id: transactionId },
             data: updateData
         });
 
-        // 3.2 อัปเดตสถานะอุปกรณ์ (ถ้ามีการเปลี่ยนแปลง)
+        // 2. ✅ เพิ่มประวัติลง Table History (Audit Trail)
+        await tx.transactionHistory.create({
+            data: {
+                borrowId: transactionId,
+                actorId: session.userId as number, // คนทำรายการ (Admin)
+                action: status,                    // สถานะที่เปลี่ยน (APPROVED, REJECTED, etc.)
+                reason: reason || null             // เหตุผล
+            }
+        });
+
+        // 3. อัปเดตสถานะอุปกรณ์ (Stock)
         if (equipmentUpdateStatus) {
             const equipmentIds = transaction.items.map(i => i.equipmentId);
+            const isActive = equipmentUpdateStatus === 'AVAILABLE';
             
-            // อัปเดตทุกชิ้นในใบงานนี้
             await tx.equipment.updateMany({
                 where: { id: { in: equipmentIds } },
-                data: { 
-                    // ตรงนี้ต้องดู Schema นายน้อยว่าใช้ field ไหนเก็บสถานะอุปกรณ์ 
-                    // (เช่น isActive หรือ status='AVAILABLE'/'BORROWED')
-                    // สมมติว่านายน้อยใช้ isActive (true=ว่าง, false=ไม่ว่าง/เสีย)
-                    // หรือถ้ามี field status ก็แก้ตรงนี้ได้เลยครับ
-                    // ตัวอย่าง:
-                    isActive: equipmentUpdateStatus === 'AVAILABLE' 
-                }
+                data: { isActive: isActive }
             });
         }
     });
