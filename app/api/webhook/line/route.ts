@@ -2,14 +2,13 @@ import { NextResponse } from 'next/server';
 import { Client, WebhookEvent } from '@line/bot-sdk';
 import prisma from '@/lib/db/prisma';
 
-// Import ตัวสร้าง Flex Message ทั้งหมด (รวมตัวใหม่ createRegisterButtonBubble)
 import { 
     createSafetySettingsBubble, 
     createCurrentStatusBubble,  
     createProfileFlexMessage,
     createWatchConnectionBubble,
     createBorrowReturnFlexMessage,
-    createRegisterButtonBubble // ✅ Import เข้ามาแล้ว
+    createRegisterButtonBubble
 } from '@/lib/line/flex-messages';
 
 const config = {
@@ -126,7 +125,7 @@ export async function POST(req: Request) {
 
 // ✅ ฟังก์ชันกลางสำหรับส่งการ์ด "กรุณาลงทะเบียน" (ใช้ซ้ำได้เลย)
 async function sendNotRegisteredFlex(replyToken: string) {
-    const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register`; // ลิงก์ไปยังหน้าลงทะเบียน
+    const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register/user`; // ลิงก์ไปยังหน้าลงทะเบียน
     const flexMsg = createRegisterButtonBubble(registerUrl);
     
     await client.replyMessage(replyToken, {

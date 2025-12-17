@@ -1411,7 +1411,7 @@ export function createRegisterButtonBubble(registerUrl: string) {
     type: "bubble",
     hero: {
       type: "image",
-      url: "https://images.unsplash.com/photo-1556740758-90de381c7909?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80", // รูปสวยๆ สื่อถึงการลงทะเบียน หรือใส่รูป Logo แบรนด์เรา
+      url: "@/images/AFE_PLUS.png",
       size: "full",
       aspectRatio: "20:13",
       aspectMode: "cover",
@@ -1451,7 +1451,7 @@ export function createRegisterButtonBubble(registerUrl: string) {
           color: "#3b82f6", // สีน้ำเงินสวยๆ
           action: {
             type: "uri",
-            label: "📝 ลงทะเบียนใช้งาน",
+            label: "ลงทะเบียนใช้งาน",
             // ✅ ตรงนี้สำคัญ: ใส่ Link หน้าเว็บลงทะเบียนของคุณ
             // ถ้าใช้ LIFF ก็ใส่ LIFF URL, ถ้าเว็บธรรมดาก็ใส่ URL เว็บ
             uri: registerUrl 
