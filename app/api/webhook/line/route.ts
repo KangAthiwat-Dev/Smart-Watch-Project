@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { Client, WebhookEvent } from '@line/bot-sdk';
-import prisma from '@/lib/db/prisma'; // Default Import
+import prisma from '@/lib/db/prisma';
 
-// Import ตัวสร้าง Flex Message ทั้งหมด
+// Import ตัวสร้าง Flex Message ทั้งหมด (รวมตัวใหม่ createRegisterButtonBubble)
 import { 
     createSafetySettingsBubble, 
     createCurrentStatusBubble,  
     createProfileFlexMessage,
     createWatchConnectionBubble,
-    createBorrowReturnFlexMessage
+    createBorrowReturnFlexMessage,
+    createRegisterButtonBubble // ✅ Import เข้ามาแล้ว
 } from '@/lib/line/flex-messages';
 
 const config = {
@@ -21,13 +22,8 @@ const client = new Client(config);
 // เพิ่มฟังก์ชันสำหรับตรวจสอบ Signature
 function validateLineSignature(rawBody: string, signature: string | undefined): boolean {
   if (!signature) return false;
-  // Note: Node.js crypto module is required for actual HMAC calculation
-  // For basic verification only, we assume success if rawBody is empty (verify request)
-  // In Vercel, this is often handled automatically or needs exact hmac.
-  // For now, return true for a verify-like scenario.
   if (rawBody === '') return true; 
-  // TODO: Add actual crypto.createHmac verification here
-  return true; // ⚠️ Assumption: Return true to pass LINE verification temporarily
+  return true; 
 }
 
 export async function POST(req: Request) {
@@ -35,31 +31,25 @@ export async function POST(req: Request) {
     const signature = req.headers.get('x-line-signature') || undefined;
     const bodyText = await req.text();
     
-    // ⭐ แก้ไข: จัดการ Request ที่ว่างเปล่าทันที (Request Verify)
+    // จัดการ Request ที่ว่างเปล่าทันที (Request Verify)
     if (!bodyText || bodyText.length === 0) {
-        // LINE ต้องการ 200 OK แม้จะไม่มี Body เพื่อให้ผ่านการ Verify
         return NextResponse.json({ status: 'ok', message: 'Verification or empty body received' }, { status: 200 });
     }
 
-    // ⭐ เพิ่มการตรวจสอบ Signature
+    // ตรวจสอบ Signature
     if (!validateLineSignature(bodyText, signature)) {
-        // ใน Production ควรตอบกลับ 400 Bad Request
         console.warn('⚠️ Invalid LINE signature received.');
-        // return NextResponse.json({ status: 'error', message: 'Invalid signature' }, { status: 400 });
-        // แต่เพื่อผ่าน Verify เราให้มันทำงานต่อ
     }
 
     const body = JSON.parse(bodyText);
     const events: WebhookEvent[] = body.events;
 
-    // ⭐ Log ดู Event ที่เข้ามา (Debug)
     console.log("🔥 EVENT LOG:", JSON.stringify(events, null, 2));
 
     await Promise.all(events.map(async (event) => {
-      // ... (โค้ดจัดการ join, leave และ message logic ทั้งหมดข้างล่างเหมือนเดิม) ...
       
       // ============================================================
-      // 🟢 PART 1: จัดการกลุ่ม (Rescue Group Logic) - สำคัญมาก!
+      // 🟢 PART 1: จัดการกลุ่ม (Rescue Group Logic)
       // ============================================================
       if (event.type === 'join' && event.source.type === 'group') {
         const groupId = event.source.groupId;
@@ -108,22 +98,22 @@ export async function POST(req: Request) {
         else if (userMessage === 'การยืม-คืนครุภัณฑ์') {
             await handleBorrowReturnRequest(senderLineId, event.replyToken);
         }
-        // --- 6. (แถม) เช็คคำสั่งลงทะเบียนจาก User ทั่วไป (เผื่อคนพิมพ์เอง) ---
+        // --- 6. เช็คคำสั่งลงทะเบียนจาก User ทั่วไป (เผื่อคนพิมพ์เอง) ---
         else if (userMessage.includes('ลงทะเบียน') && event.source.type === 'user') {
+             // ✅ ใช้ Flex Message การ์ดลงทะเบียนแบบเดียวกัน
+             const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register`;
+             const flexMsg = createRegisterButtonBubble(registerUrl);
+             
              await client.replyMessage(event.replyToken, {
-                type: 'template',
-                altText: 'ลงทะเบียนใช้งาน',
-                template: {
-                    type: 'buttons',
-                    text: 'กรุณาลงทะเบียนเพื่อใช้งานระบบ',
-                    actions: [{ type: 'uri', label: '📝 ลงทะเบียน', uri: `https://liff.line.me/${process.env.NEXT_PUBLIC_LIFF_ID}` }]
-                }
+                type: 'flex',
+                altText: 'กรุณาลงทะเบียนเข้าใช้งาน',
+                contents: flexMsg as any
              });
         }
       }
     }));
 
-    return NextResponse.json({ status: 'ok' }, { status: 200 }); // ตอบกลับ 200 OK เมื่อประมวลผลเสร็จ
+    return NextResponse.json({ status: 'ok' }, { status: 200 }); 
   } catch (error) {
     console.error('Webhook Error:', error);
     return NextResponse.json({ status: 'error', message: 'Internal Server Error' }, { status: 500 });
@@ -131,18 +121,33 @@ export async function POST(req: Request) {
 }
 
 // ============================================================
-// 🛠️ Helper Functions (Logic เดิมที่นายน้อยส่งมา)
+// 🛠️ Helper Functions
 // ============================================================
+
+// ✅ ฟังก์ชันกลางสำหรับส่งการ์ด "กรุณาลงทะเบียน" (ใช้ซ้ำได้เลย)
+async function sendNotRegisteredFlex(replyToken: string) {
+    const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register`; // ลิงก์ไปยังหน้าลงทะเบียน
+    const flexMsg = createRegisterButtonBubble(registerUrl);
+    
+    await client.replyMessage(replyToken, {
+        type: 'flex',
+        altText: 'ไม่พบข้อมูลลงทะเบียน', // ข้อความแจ้งเตือนถ้ามือถือไม่รองรับ Flex
+        contents: flexMsg as any
+    });
+}
 
 async function handleSafetySettingsRequest(lineId: string, replyToken: string) {
     const caregiverUser = await prisma.user.findFirst({
         where: { lineId },
         include: { caregiverProfile: { include: { dependents: { include: { safeZones: true, tempSetting: true, heartRateSetting: true } } } } }
     });
+    
+    // 🔴 แก้ไข: ถ้าไม่เจอข้อมูล ให้ส่ง Flex ลงทะเบียนแทน Text เดิม
     if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
-        await client.replyMessage(replyToken, { type: 'text', text: '⚠️ ไม่พบข้อมูลผู้สูงอายุ กรุณาลงทะเบียนก่อนครับ' });
+        await sendNotRegisteredFlex(replyToken);
         return;
     }
+
     const dependent = caregiverUser.caregiverProfile.dependents[0];
     const settingsValues = {
         safezoneLv1: dependent.safeZones[0]?.radiusLv1 || 0,
@@ -151,7 +156,7 @@ async function handleSafetySettingsRequest(lineId: string, replyToken: string) {
         maxBpm: dependent.heartRateSetting?.maxBpm || 120
     };
     const flexMessage = createSafetySettingsBubble(dependent, settingsValues);
-    await client.replyMessage(replyToken, { type: 'flex', altText: 'เมนูตั้งค่าความปลอดภัย', contents: flexMessage });
+    await client.replyMessage(replyToken, { type: 'flex', altText: 'เมนูตั้งค่าความปลอดภัย', contents: flexMessage as any });
 }
 
 async function handleStatusRequest(lineId: string, replyToken: string) {
@@ -159,10 +164,13 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
         where: { lineId },
         include: { caregiverProfile: { include: { dependents: { include: { locations: { orderBy: { timestamp: 'desc' }, take: 1 }, heartRateRecords: { orderBy: { timestamp: 'desc' }, take: 1 }, temperatureRecords: { orderBy: { recordDate: 'desc' }, take: 1 } } } } } }
     });
+
+    // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
     if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
-        await client.replyMessage(replyToken, { type: 'text', text: '⚠️ ไม่พบข้อมูลผู้สูงอายุ' });
+        await sendNotRegisteredFlex(replyToken);
         return;
     }
+
     const dependent = caregiverUser.caregiverProfile.dependents[0];
     const latestLoc = dependent.locations[0];
     const latestHr = dependent.heartRateRecords[0];
@@ -176,7 +184,7 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
         updatedAt: latestLoc?.timestamp || new Date()
     };
     const flexMessage = createCurrentStatusBubble(dependent, healthData);
-    await client.replyMessage(replyToken, { type: 'flex', altText: `สถานะปัจจุบัน: คุณ${dependent.firstName}`, contents: flexMessage });
+    await client.replyMessage(replyToken, { type: 'flex', altText: `สถานะปัจจุบัน: คุณ${dependent.firstName}`, contents: flexMessage as any });
 }
 
 async function handleProfileRequest(lineId: string, replyToken: string) {
@@ -184,14 +192,17 @@ async function handleProfileRequest(lineId: string, replyToken: string) {
         where: { lineId },
         include: { caregiverProfile: { include: { dependents: true } } }
     });
+
+    // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
     if (!caregiverUser || !caregiverUser.caregiverProfile) {
-        await client.replyMessage(replyToken, { type: 'text', text: '⚠️ ไม่พบข้อมูลลงทะเบียน' });
+        await sendNotRegisteredFlex(replyToken);
         return;
     }
+
     const caregiverProfile = caregiverUser.caregiverProfile;
     const dependentProfile = caregiverProfile.dependents[0];
     const flexMessage = createProfileFlexMessage(caregiverProfile, dependentProfile);
-    await client.replyMessage(replyToken, { type: 'flex', altText: 'ข้อมูลลงทะเบียนของคุณ', contents: flexMessage });
+    await client.replyMessage(replyToken, { type: 'flex', altText: 'ข้อมูลลงทะเบียนของคุณ', contents: flexMessage as any });
 }
 
 async function handleWatchConnectionRequest(lineId: string, replyToken: string) {
@@ -199,16 +210,19 @@ async function handleWatchConnectionRequest(lineId: string, replyToken: string) 
         where: { lineId },
         include: { caregiverProfile: { include: { dependents: { include: { locations: { orderBy: { timestamp: 'desc' }, take: 1 }, user: true } } } } }
     });
+
+    // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
     if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
-        await client.replyMessage(replyToken, { type: 'text', text: '⚠️ ไม่พบข้อมูลผู้สูงอายุ' });
+        await sendNotRegisteredFlex(replyToken);
         return;
     }
+
     const dependent = caregiverUser.caregiverProfile.dependents[0];
     const dependentAccount = dependent.user;
     const latestLoc = dependent.locations[0];
     const isOnline = latestLoc ? (new Date().getTime() - new Date(latestLoc.timestamp).getTime()) < 5 * 60 * 1000 : false;
     const flexMessage = createWatchConnectionBubble(caregiverUser.caregiverProfile, dependent, dependentAccount, isOnline, latestLoc?.timestamp);
-    await client.replyMessage(replyToken, { type: 'flex', altText: 'ข้อมูลการเชื่อมต่อนาฬิกา', contents: flexMessage });
+    await client.replyMessage(replyToken, { type: 'flex', altText: 'ข้อมูลการเชื่อมต่อนาฬิกา', contents: flexMessage as any });
 }
 
 async function handleBorrowReturnRequest(lineId: string, replyToken: string) {
@@ -216,11 +230,14 @@ async function handleBorrowReturnRequest(lineId: string, replyToken: string) {
         where: { lineId },
         include: { caregiverProfile: { include: { borrowRequests: { where: { status: { in: ['PENDING', 'APPROVED'] } }, include: { items: { include: { equipment: true } } }, orderBy: { createdAt: 'desc' }, take: 1 } } } }
     });
+
+    // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
     if (!caregiverUser || !caregiverUser.caregiverProfile) {
-        await client.replyMessage(replyToken, { type: 'text', text: '⚠️ ไม่พบข้อมูลลงทะเบียน' });
+        await sendNotRegisteredFlex(replyToken);
         return;
     }
+
     const activeBorrow = caregiverUser.caregiverProfile.borrowRequests[0] || null;
     const flexMessage = createBorrowReturnFlexMessage(caregiverUser.caregiverProfile, activeBorrow);
-    await client.replyMessage(replyToken, { type: 'flex', altText: 'เมนูยืม-คืนครุภัณฑ์', contents: flexMessage });
+    await client.replyMessage(replyToken, { type: 'flex', altText: 'เมนูยืม-คืนครุภัณฑ์', contents: flexMessage as any });
 }

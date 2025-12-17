@@ -1405,3 +1405,60 @@ export const createReturnSuccessBubble = (
         }
     };
 };
+
+export function createRegisterButtonBubble(registerUrl: string) {
+  return {
+    type: "bubble",
+    hero: {
+      type: "image",
+      url: "https://images.unsplash.com/photo-1556740758-90de381c7909?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80", // รูปสวยๆ สื่อถึงการลงทะเบียน หรือใส่รูป Logo แบรนด์เรา
+      size: "full",
+      aspectRatio: "20:13",
+      aspectMode: "cover",
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: "ไม่พบข้อมูลลงทะเบียน",
+          weight: "bold",
+          size: "xl",
+          color: "#ef4444", // สีแดงเตือนใจ
+          align: "center"
+        },
+        {
+          type: "text",
+          text: "ดูเหมือนว่าคุณยังไม่ได้ลงทะเบียนเข้าใช้งาน กรุณาลงทะเบียนเพื่อเริ่มใช้งานระบบดูแลผู้สูงอายุ",
+          margin: "md",
+          size: "sm",
+          color: "#64748b",
+          wrap: true,
+          align: "center"
+        }
+      ]
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          color: "#3b82f6", // สีน้ำเงินสวยๆ
+          action: {
+            type: "uri",
+            label: "📝 ลงทะเบียนใช้งาน",
+            // ✅ ตรงนี้สำคัญ: ใส่ Link หน้าเว็บลงทะเบียนของคุณ
+            // ถ้าใช้ LIFF ก็ใส่ LIFF URL, ถ้าเว็บธรรมดาก็ใส่ URL เว็บ
+            uri: registerUrl 
+          }
+        }
+      ],
+      flex: 0
+    }
+  };
+}
