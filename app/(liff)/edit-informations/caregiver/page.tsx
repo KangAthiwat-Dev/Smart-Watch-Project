@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { Loader2, Save, MapPin, User, Phone, ChevronDown } from "lucide-react";
 import Image from "next/image";
 
-// ✅ Import Action & Schema (ต้องมั่นใจว่าไฟล์พวกนี้มีอยู่จริงนะครับ)
 import {
   getCaregiverByLineId,
   updateCaregiverProfile,
@@ -24,13 +23,11 @@ import {
   ThaiTambon,
 } from "@/services/thai-data.service";
 
-// ✅ เปลี่ยนชื่อ Function และใส่ export default เพื่อให้ Next.js มองเห็นเป็น Page
 export default function CaregiverEditPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [liffReady, setLiffReady] = useState(false);
   const [profile, setProfile] = useState<any>(null);
 
-  // Address State
   const [isAddressLoading, setIsAddressLoading] = useState(true);
   const [allProvinces, setAllProvinces] = useState<ThaiProvince[]>([]);
   const [amphureOptions, setAmphureOptions] = useState<ThaiAmphure[]>([]);
@@ -56,32 +53,32 @@ export default function CaregiverEditPage() {
     },
   });
 
-  // Init Data
   useEffect(() => {
     const init = async () => {
       try {
-        // 1. โหลดข้อมูลจังหวัดรอไว้ก่อน
         const thaiData = await getThaiAddressData();
         setAllProvinces(thaiData);
         setIsAddressLoading(false);
 
-        // Helper: ฟังก์ชันดึงข้อมูลเก่ามาใส่ฟอร์ม
         const fetchAndFill = async (targetLineId: string) => {
           const res = await getCaregiverByLineId(targetLineId);
           
           if (res.success && res.data) {
             const d = res.data;
             
-            // Format Phone: ตัด 0 หรือ +66 ออกเพื่อแสดงใน input
+            // ✅ แก้ไข 1: การดึงเบอร์มาแสดง
+            // ถ้าเบอร์เก่าเป็น +66 ให้แปลงกลับเป็น 0 เพื่อแสดงผล
+            // ถ้าเป็น 0 อยู่แล้วก็แสดงเลย
             let formattedPhone = d.phone || "";
-            formattedPhone = formattedPhone.replace(/^(\+66)/, "").replace(/^0/, "");
+            if (formattedPhone.startsWith("+66")) {
+                formattedPhone = "0" + formattedPhone.substring(3);
+            }
 
-            // ✅ Set ค่าลงใน Form
             form.reset({
               lineId: targetLineId,
               firstName: d.firstName,
               lastName: d.lastName,
-              phone: formattedPhone,
+              phone: formattedPhone, // แสดงเบอร์ที่มี 0 นำหน้า
               houseNumber: d.houseNumber,
               village: d.village,
               road: d.road || "",
@@ -89,13 +86,11 @@ export default function CaregiverEditPage() {
               district: d.district,
               subDistrict: d.subDistrict,
               postalCode: d.postalCode,
-              gender: d.gender as any, // casting เพราะค่าจาก DB อาจจะเป็น string
+              gender: d.gender as any,
               marital: d.marital as any,
-              // แปลง Date เป็น YYYY-MM-DD
               birthday: d.birthday ? new Date(d.birthday).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
             });
 
-            // ✅ Logic เลือกจังหวัด/อำเภอ/ตำบล ให้ตรงกับข้อมูลเก่า
             const prov = thaiData.find((i) => i.name === d.province);
             if (prov) {
               setAmphureOptions(prov.amphure);
@@ -109,11 +104,7 @@ export default function CaregiverEditPage() {
           }
         };
 
-        // 2. เริ่มต้น LIFF
-        // ⚠️ นายน้อยอย่าลืมเช็ค .env ว่าใช้ LIFF ID ตัวไหนนะครับ
-        // ถ้าหน้านี้ใช้ LIFF ID เดียวกับหน้า Register ก็ใช้ตัวเดิมได้เลย
         const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ""; 
-
         try {
           await liff.init({
             liffId: liffId,
@@ -132,21 +123,18 @@ export default function CaregiverEditPage() {
         setProfile(p);
         form.setValue("lineId", p.userId);
 
-        // 3. ดึงข้อมูลเก่ามาแสดง
         await fetchAndFill(p.userId);
-
         setLiffReady(true);
       } catch (e) {
         console.error("Critical Initialization Error:", e);
         setIsAddressLoading(false);
-        setLiffReady(true); // ให้แสดงหน้าจอแม้จะ error เพื่อไม่ให้จอขาว
+        setLiffReady(true);
       }
     };
 
     init();
   }, [form]);
 
-  // Address Handlers (เหมือนเดิม)
   const handleProvinceChange = (provinceName: string) => {
     form.setValue("province", provinceName);
     form.setValue("district", "");
@@ -171,26 +159,19 @@ export default function CaregiverEditPage() {
     if (t) form.setValue("postalCode", t.zipCode);
   };
 
-  // Submit
   const onSubmit = async (data: CaregiverRegisterInput) => {
     setIsLoading(true);
     try {
-      // Add +66 prefix
+      // ✅ แก้ไข 2: เอา Logic แปลงเป็น +66 ออก
+      // ส่งค่า data.phone ไปตรงๆ เลย (ผู้ใช้กรอก 08x... ก็ส่ง 08x...)
       const submitData = {
         ...data,
-        phone: data.phone.startsWith("0")
-          ? `+66${data.phone.substring(1)}`
-          : data.phone.startsWith("+66") 
-            ? data.phone 
-            : `+66${data.phone}`,
       };
 
       const res = await updateCaregiverProfile(submitData.lineId, submitData);
 
       if (res.success) {
         toast.success("บันทึกข้อมูลเรียบร้อย!");
-        // Optional: ปิดหน้าต่างหลังบันทึกเสร็จ
-        // setTimeout(() => liff.closeWindow(), 2000); 
       } else {
         toast.error(res.error || "บันทึกไม่สำเร็จ");
       }
@@ -212,7 +193,6 @@ export default function CaregiverEditPage() {
       {/* Header */}
       <div className="relative bg-white pb-10 rounded-b-[2.5rem] shadow-lg overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-50 to-white pointer-events-none" />
-
         <div className="relative z-10 pt-10 px-6 text-center">
           <h1 className="text-2xl font-black text-slate-800 mb-1 tracking-tight">
             แก้ไขข้อมูลส่วนตัว
@@ -247,7 +227,7 @@ export default function CaregiverEditPage() {
         onSubmit={form.handleSubmit(onSubmit)}
         className="px-5 -mt-6 relative z-20 max-w-lg mx-auto space-y-6"
       >
-        {/* 1. ข้อมูลส่วนตัว */}
+        {/* ข้อมูลส่วนตัว */}
         <div className="bg-white p-6 rounded-3xl shadow-xl shadow-blue-900/5 border border-white/50">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
@@ -284,21 +264,23 @@ export default function CaregiverEditPage() {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">
                 เบอร์โทรศัพท์
               </label>
+              
+              {/* ✅ แก้ไข 3: เอา UI ที่แสดง +66 ออก เพื่อให้กรอก 0 ได้ปกติ */}
               <div className="relative">
                 <div className="absolute left-4 top-3.5 flex items-center gap-2 pointer-events-none">
                   <Phone className="w-5 h-5 text-slate-400" />
-                  <span className="font-bold text-slate-500 border-r border-slate-300 pr-2">
-                    +66
-                  </span>
+                  {/* ลบตัว +66 ตรงนี้ออก */}
                 </div>
                 <input
                   type="tel"
                   maxLength={10}
                   {...form.register("phone")}
-                  className="w-full pl-28 pr-4 py-3 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-blue-500/20 transition-all font-bold text-slate-700 tracking-wide placeholder:text-slate-300"
-                  placeholder="8xxxxxxxx"
+                  // เปลี่ยน pl-28 (เว้นเยอะ) เป็น pl-12 (เว้นแค่ไอคอน)
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-blue-500/20 transition-all font-bold text-slate-700 tracking-wide placeholder:text-slate-300"
+                  placeholder="ระบุเบอร์โทร"
                 />
               </div>
+
               {form.formState.errors.phone && (
                 <p className="text-xs text-red-500 ml-1">
                   {form.formState.errors.phone.message}
@@ -306,6 +288,7 @@ export default function CaregiverEditPage() {
               )}
             </div>
 
+            {/* ... ส่วนอื่นๆ เหมือนเดิม ... */}
             <div className="grid grid-cols-2 gap-4 pt-2">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">
@@ -356,7 +339,7 @@ export default function CaregiverEditPage() {
           </div>
         </div>
 
-        {/* 2. ที่อยู่ */}
+        {/* ที่อยู่ */}
         <div className="bg-white p-6 rounded-3xl shadow-xl shadow-blue-900/5 border border-white/50">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-green-50 flex items-center justify-center text-green-600">
@@ -394,9 +377,6 @@ export default function CaregiverEditPage() {
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">
                 ถนน / ซอย{" "}
-                <span className="text-[9px] font-normal lowercase">
-                  (optional)
-                </span>
               </label>
               <input
                 {...form.register("road")}

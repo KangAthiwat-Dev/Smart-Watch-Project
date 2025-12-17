@@ -10,13 +10,13 @@ import {
   Save,
   User,
   MapPin,
-  Heart, // ใช้ Heart แทน Activity ในบางจุดได้ หรือใช้ Activity ตามเดิม
+  Heart,
   Activity,
   ChevronDown,
   Calendar,
+  Phone, // ✅ เพิ่ม Import Phone Icon
 } from "lucide-react";
 
-// ✅ Import Actions & Services
 import {
   getDependentsByCaregiverLineId,
   updateDependentProfile,
@@ -32,7 +32,6 @@ import {
   ThaiTambon,
 } from "@/services/thai-data.service";
 
-// ✅ เปลี่ยนเป็น export default
 export default function DependentEditPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAddressLoading, setIsAddressLoading] = useState(true);
@@ -48,7 +47,7 @@ export default function DependentEditPage() {
   const form = useForm<DependentRegisterInput>({
     resolver: zodResolver(dependentRegisterSchema),
     defaultValues: {
-      lineId: "", // จะถูกใส่ค่าตอนโหลด แต่ไม่ได้ใช้ตอน update (เพราะ update by ID)
+      lineId: "",
       gender: "UNSPECIFIED",
       marital: "SINGLE",
       birthday: new Date().toISOString().split("T")[0],
@@ -73,24 +72,22 @@ export default function DependentEditPage() {
       try {
         setIsAddressLoading(true);
 
-        // 1. โหลดข้อมูลที่อยู่
         const addressData = await getThaiAddressData();
         setAllProvinces(addressData);
 
-        // Helper: ดึงข้อมูลผู้สูงอายุมาใส่ฟอร์ม
         const fetchAndFill = async (caregiverLineId: string) => {
           const res = await getDependentsByCaregiverLineId(caregiverLineId);
           
           if (res.success && res.data && res.data.length > 0) {
-            // ⚠️ หมายเหตุ: ตอนนี้ดึงคนแรกมาแก้ก่อน (สำหรับ MVP 1-to-1)
             const d = res.data[0];
             setDependentId(d.id);
 
-            // Format Phone (เอา 0 หรือ +66 ออก)
+            // ✅ แก้ไข 1: Logic แสดงเบอร์โทร (แปลง +66 เป็น 0)
             let formattedPhone = d.phone || "";
-            formattedPhone = formattedPhone.replace(/^(\+66)/, "").replace(/^0/, "");
+            if (formattedPhone.startsWith("+66")) {
+                formattedPhone = "0" + formattedPhone.substring(3);
+            }
 
-            // ✅ Set ค่าลงฟอร์ม
             form.reset({
               lineId: caregiverLineId,
               firstName: d.firstName,
@@ -98,10 +95,9 @@ export default function DependentEditPage() {
               gender: d.gender as any,
               marital: d.marital as any,
               birthday: d.birthday ? new Date(d.birthday).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-              phone: formattedPhone,
+              phone: formattedPhone, // ใช้เบอร์ที่แปลงแล้ว
               diseases: d.diseases || "",
               medications: d.medications || "",
-              // ที่อยู่
               houseNumber: d.houseNumber || "",
               village: d.village || "",
               road: d.road || "",
@@ -109,10 +105,9 @@ export default function DependentEditPage() {
               district: d.district || "",
               subDistrict: d.subDistrict || "",
               postalCode: d.postalCode || "",
-              pin: d.pin || "", // PIN เดิม
+              pin: d.pin || "", 
             });
 
-            // ✅ Set Dropdown ที่อยู่ให้ตรงกับของเดิม
             const prov = addressData.find((i) => i.name === d.province);
             if (prov) {
               setAmphureOptions(prov.amphure);
@@ -121,15 +116,9 @@ export default function DependentEditPage() {
                 setTambonOptions(amp.tambon);
               }
             }
-          } else {
-            // กรณีไม่พบข้อมูล (อาจจะยังไม่เคยลงทะเบียนผู้สูงอายุ)
-            // toast.error("ไม่พบข้อมูลผู้สูงอายุ"); 
           }
         };
 
-        // ============================================================
-        // 🚀 LIFF Logic
-        // ============================================================
         const liffId = process.env.NEXT_PUBLIC_LIFF_ID || "";
         try {
           await liff.init({
@@ -149,7 +138,6 @@ export default function DependentEditPage() {
         setProfile(userProfile);
         form.setValue("lineId", userProfile.userId);
 
-        // ดึงข้อมูลจริง
         await fetchAndFill(userProfile.userId);
 
         setLiffReady(true);
@@ -158,14 +146,13 @@ export default function DependentEditPage() {
       } catch (error) {
         console.error("Critical Init Error:", error);
         setIsAddressLoading(false);
-        setLiffReady(true); // Show content anyway
+        setLiffReady(true); 
       }
     };
 
     initData();
   }, [form]);
 
-  // --- Address Handlers ---
   const handleProvinceChange = (provinceName: string) => {
     form.setValue("province", provinceName);
     form.setValue("district", "");
@@ -190,7 +177,6 @@ export default function DependentEditPage() {
     if (tambon) form.setValue("postalCode", tambon.zipCode);
   };
 
-  // --- Submit ---
   const onSubmit = async (data: DependentRegisterInput) => {
     if (!dependentId) {
         toast.error("ไม่พบ ID ผู้สูงอายุ (กรุณาลงทะเบียนก่อนแก้ไข)");
@@ -198,21 +184,15 @@ export default function DependentEditPage() {
     }
     setIsLoading(true);
     try {
-      // Format Phone +66
+      // ✅ แก้ไข 2: ส่งเบอร์ไปตรงๆ ไม่ต้องเติม +66
       const submitData = {
         ...data,
-        phone: data.phone.startsWith("0")
-          ? `+66${data.phone.substring(1)}`
-          : data.phone.startsWith("+66") 
-            ? data.phone 
-            : `+66${data.phone}`,
       };
 
       const res = await updateDependentProfile(dependentId, submitData);
 
       if (res.success) {
         toast.success("บันทึกข้อมูลเรียบร้อย!");
-        // setTimeout(() => liff.closeWindow(), 2000);
       } else {
         toast.error(res.error || "บันทึกไม่สำเร็จ");
       }
@@ -258,7 +238,7 @@ export default function DependentEditPage() {
         onSubmit={form.handleSubmit(onSubmit)}
         className="px-5 -mt-6 relative z-20 max-w-lg mx-auto space-y-6"
       >
-        {/* 1. ข้อมูลส่วนตัว */}
+        {/* ข้อมูลส่วนตัว */}
         <div className="bg-white p-6 rounded-3xl shadow-xl shadow-orange-900/5 border border-white/50">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-600">
@@ -363,7 +343,7 @@ export default function DependentEditPage() {
           </div>
         </div>
 
-        {/* 2. Address */}
+        {/* Address */}
         <div className="bg-white p-6 rounded-3xl shadow-xl shadow-orange-900/5 border border-white/50">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-green-50 flex items-center justify-center text-green-600">
@@ -400,10 +380,7 @@ export default function DependentEditPage() {
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">
-                ถนน / ซอย{" "}
-                <span className="text-[9px] font-normal lowercase">
-                  (optional)
-                </span>
+                ถนน / ซอย
               </label>
               <input
                 {...form.register("road")}
@@ -482,7 +459,7 @@ export default function DependentEditPage() {
           </div>
         </div>
 
-        {/* 3. Contact & Health */}
+        {/* Contact & Health */}
         <div className="bg-white p-6 rounded-3xl shadow-xl shadow-orange-900/5 border border-white/50">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
@@ -493,18 +470,17 @@ export default function DependentEditPage() {
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">
-                เบอร์โทรศัพท์ (ฉุกเฉิน)
-              </label>
-              <div className="relative flex items-center">
-                <div className="absolute left-0 top-0 bottom-0 w-14 bg-slate-100 rounded-l-2xl border-r border-slate-200 flex items-center justify-center z-10">
-                  <span className="text-sm font-bold text-slate-500">+66</span>
+              {/* ✅ แก้ไข 3: ปรับ UI Input ให้กรอก 0 ได้ปกติ (มีไอคอน Phone) */}
+              <div className="relative">
+                <div className="absolute left-4 top-3.5 flex items-center gap-2 pointer-events-none">
+                  <Phone className="w-5 h-5 text-slate-400" />
                 </div>
                 <input
                   type="tel"
                   {...form.register("phone")}
-                  className="w-full pl-16 pr-4 py-3 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-rose-500/20 transition-all font-bold text-slate-700 tracking-wide placeholder:text-slate-300"
-                  placeholder="812345678"
+                  // ใช้ pl-12 เพื่อเว้นที่ให้ไอคอน Phone
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 rounded-2xl border-0 focus:ring-2 focus:ring-rose-500/20 transition-all font-bold text-slate-700 tracking-wide placeholder:text-slate-300"
+                  placeholder="ระบุเบอร์โทร" // placeholder 08...
                   maxLength={10}
                 />
               </div>
