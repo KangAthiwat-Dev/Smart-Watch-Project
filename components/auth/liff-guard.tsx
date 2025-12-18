@@ -5,6 +5,7 @@ import liff from '@line/liff';
 import { useRouter, usePathname } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { checkLiffUserStatus } from '@/actions/liff-auth.actions';
+import { setAuthCookie } from '@/actions/auth-cookie.actions';
 
 export default function LiffGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -42,6 +43,7 @@ export default function LiffGuard({ children }: { children: React.ReactNode }) {
         }
 
         const profile = await liff.getProfile();
+        await setAuthCookie(profile.userId);
         const status = await checkLiffUserStatus(profile.userId);
 
         // Logic การเด้งหน้า
@@ -54,6 +56,7 @@ export default function LiffGuard({ children }: { children: React.ReactNode }) {
         } else {
             // COMPLETE
             setIsChecking(false);
+            router.refresh();
         }
 
       } catch (error) {

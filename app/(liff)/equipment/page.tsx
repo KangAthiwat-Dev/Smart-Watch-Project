@@ -13,9 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-// 1. เพิ่ม import cookies และ redirect
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import LiffGuard from "@/components/auth/liff-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,11 +23,13 @@ export default async function EquipmentMenuPage() {
   const cookieStore = await cookies();
   const userIdStr = cookieStore.get("userId")?.value;
 
-  // ถ้าไม่มี Cookie (ยังไม่ Login) ให้ดีดไปหน้า Login หรือแสดง Error
   if (!userIdStr) {
-    // กรณีนี้ควร Redirect ไปหน้า LIFF Init เพื่อ Login ใหม่
-    // redirect("/auth/login"); 
-    return <div className="p-6 text-center text-red-500">กรุณาเข้าสู่ระบบผ่าน LINE</div>;
+    return (
+      <LiffGuard>
+         {/* ใส่ div ว่างๆ ไว้ เพราะเดี๋ยว LiffGuard จะสั่ง reload หน้าจอเองเมื่อ Login เสร็จ */}
+         <div className="min-h-screen bg-white"></div> 
+      </LiffGuard>
+    );
   }
 
   const userId = parseInt(userIdStr);

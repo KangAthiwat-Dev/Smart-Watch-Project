@@ -1489,7 +1489,7 @@ export const createBorrowReturnFlexMessage = (
   const liffBase = process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
   
   // ✅ ลิงก์เดียว เข้าไปหน้าเมนูรวม (ไปจัดการ Logic ต่อในเว็บ)
-  const menuUrl = `${liffBase}/equipment`; 
+  const menuUrl = `${liffBase}/equipment`;
 
   // ดึงสถานะปัจจุบัน (เอาไว้โชว์ให้รู้สถานะคร่าวๆ ก่อนกดเข้าไป)
   const status = activeBorrow?.status || "NONE";
