@@ -137,7 +137,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
           <div className="p-4 border-t border-gray-800">
             <p className="text-xs text-gray-400 text-center">
-              Version 1.0.0
+              Version 2.0.0
             </p>
           </div>
         </div>

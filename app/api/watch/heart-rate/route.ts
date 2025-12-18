@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db/prisma';
+import { prisma } from '@/lib/db/prisma';
 import { sendCriticalAlertFlexMessage, createGeneralAlertBubble } from '@/lib/line/flex-messages';
 import { Client } from '@line/bot-sdk';
 
@@ -16,7 +16,7 @@ async function handleRequest(request: Request) {
 
     if (!targetId) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
 
-    // 🛑 กฏเหล็ก: ถ้าค่าเป็น 0 หรือน้อยกว่า (Sensor ยังไม่ทำงาน) -> จบเลย ห้ามทำต่อ
+    // 🛑 กฏเหล็ก: ถ้าค่าเป็น 0 หรือน้อยกว่า (Sensor ยังไม่ทำงาน) -> จบเลย
     if (bpm <= 0) {
         return NextResponse.json({ success: true, message: "Ignored 0 bpm" });
     }
@@ -29,6 +29,7 @@ async function handleRequest(request: Request) {
               include: {
                   caregiver: { include: { user: true } },
                   heartRateSetting: true,
+                  // ✅ ดึง Location ล่าสุดมาด้วย เพื่อใช้ทำ Map ใน Flex Message
                   locations: { take: 1, orderBy: { timestamp: 'desc' } } 
               }
           } 
@@ -48,6 +49,17 @@ async function handleRequest(request: Request) {
     // 2. Logic Alert
     const isAbnormal = (bpm < minVal || bpm > maxVal);
     const isAlertSent = dependent.isHeartRateAlertSent; 
+
+    // ⭐ ย้ายการบันทึก Record มาไว้ตรงนี้ (ก่อนส่ง LINE) ⭐
+    // เพื่อให้เรามี record.id ไปแปะในปุ่ม SOS
+    const record = await prisma.heartRateRecord.create({
+        data: {
+          dependentId: dependent.id,
+          bpm: bpm,
+          status: isAbnormal ? 'ABNORMAL' : 'NORMAL',
+          timestamp: new Date(),
+        },
+    });
 
     let shouldSendLine = false;
     let newAlertStatus = isAlertSent;
@@ -73,18 +85,19 @@ async function handleRequest(request: Request) {
         console.log(`💓 HeartRate Alert: ${messageType} (${bpm} bpm)`);
 
         if (messageType === 'CRITICAL') {
-            // 🚨 แก้ไข: ใช้การ์ดแบบ GeneralAlert สีส้ม เพื่อให้โชว์ตัวเลขชัดเจน
-            // (เพราะการ์ด CriticalAlertFlexMessage อาจจะไม่ได้ออกแบบมาให้โชว์ตัวเลข BPM ในบางเวอร์ชั่น)
-            const msg = createGeneralAlertBubble(
-                "💓 อัตราการเต้นหัวใจผิดปกติ",
-                `ค่าอยู่นอกเกณฑ์ที่กำหนด (${minVal}-${maxVal} bpm)`,
-                `${bpm} bpm`, // ✅ โชว์เลขตรงนี้ชัดๆ
-                "#F97316", // สีส้ม
-                true // ✅ มีปุ่ม 1669
+            // ✅ ใช้ sendCriticalAlertFlexMessage แทน เพื่อให้ได้ปุ่ม SOS ที่สมบูรณ์
+            // และส่ง type = 'HEALTH'
+            await sendCriticalAlertFlexMessage(
+                lineId,
+                record, // ส่ง record ที่เพิ่งสร้าง (มี ID แล้ว)
+                user,
+                dependent.caregiver.phone || '',
+                dependent as any,
+                'HEART' // 👈 พระเอกของเรา: ระบุว่าเป็น HEALTH
             );
-            await lineClient.pushMessage(lineId, { type: 'flex', altText: 'แจ้งเตือนชีพจรผิดปกติ', contents: msg });
         } 
         else if (messageType === 'RECOVERY') {
+            // ส่วน Recovery ใช้แบบเดิมได้ เพราะไม่ต้องมีปุ่ม SOS
             const msg = createGeneralAlertBubble(
                 "✅ อัตราการเต้นหัวใจปกติ",
                 `ค่ากลับมาอยู่ในเกณฑ์ปกติแล้ว (${minVal}-${maxVal})`,
@@ -96,16 +109,7 @@ async function handleRequest(request: Request) {
         }
     }
 
-    // 4. บันทึก & อัปเดต
-    const record = await prisma.heartRateRecord.create({
-      data: {
-        dependentId: dependent.id,
-        bpm: bpm,
-        status: isAbnormal ? 'ABNORMAL' : 'NORMAL',
-        timestamp: new Date(),
-      },
-    });
-
+    // อัปเดตสถานะ Alert Flag
     if (newAlertStatus !== isAlertSent) {
         await prisma.dependentProfile.update({
             where: { id: dependent.id },

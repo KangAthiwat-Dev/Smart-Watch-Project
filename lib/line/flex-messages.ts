@@ -23,7 +23,7 @@ export const createAlertFlexMessage = (
   record: any,
   user: User,
   dependentProfile: DependentProfile & { locations?: any[] },
-  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" = "FALL"
+  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL"
 ): FlexBubble => {
   // 1. ธีมสี & หัวข้อ
   let headerText = "แจ้งเตือน";
@@ -32,21 +32,34 @@ export const createAlertFlexMessage = (
 
   if (alertType === "FALL") {
     headerText = "ตรวจพบการล้ม";
-    startColor = "#FF416C";
+    startColor = "#FF416C"; // แดงอมชมพู
     endColor = "#FF4B2B";
   } else if (alertType === "SOS") {
     headerText = "ขอความช่วยเหลือ";
-    startColor = "#FF8008";
+    startColor = "#FF8008"; // ส้มเหลือง
     endColor = "#FFC837";
-  } else if (alertType === "HEALTH") {
+  } else if (alertType === "ZONE") {
+    headerText = "หลุดเขตอันตราย";
+    startColor = "#D90429"; // แดงเข้ม
+    endColor = "#EF233C";
+  } 
+  // ✅ เพิ่ม HEART (ธีมสีแดงหัวใจ)
+  else if (alertType === "HEART") {
+    headerText = "ชีพจรผิดปกติ";
+    startColor = "#DC2626"; // แดงสด
+    endColor = "#991B1B";   // แดงเลือดหมู
+  }
+  // ✅ เพิ่ม TEMP (ธีมสีส้มร้อนแรง)
+  else if (alertType === "TEMP") {
+    headerText = "อุณหภูมิสูง";
+    startColor = "#F97316"; // ส้ม
+    endColor = "#EA580C";   // ส้มอิฐ
+  }
+  // (Optional) HEALTH เดิมเผื่อมีใช้อยู่
+  else if (alertType === "HEALTH") {
     headerText = "สุขภาพผิดปกติ";
     startColor = "#F2994A";
     endColor = "#F2C94C";
-  } else if (alertType === "ZONE") {
-    // ✅ แก้ชื่อให้ชัดเจน: นี่คือระดับอันตรายสูงสุด (ชั้น 2)
-    headerText = "หลุดเขตอันตราย";
-    startColor = "#D90429";
-    endColor = "#EF233C"; // แดงเข้ม
   }
 
   // 2. เวลา
@@ -94,10 +107,9 @@ export const createAlertFlexMessage = (
   // 4. 🔥 จัดการปุ่ม
   const buttonContents: any[] = [];
 
-  // const broadcastUrl = `${process.env.LIFF_BASE_URL}/rescue/broadcast-trigger?id=${record.id || 0}`;
   const broadcastUrl = `${process.env.LIFF_BASE_URL_TRIGGER}?id=${
     record.id || 0
-  }`;
+  }&type=${alertType}`;
 
   if (alertType !== "SOS") {
     buttonContents.push({
@@ -310,7 +322,7 @@ export async function sendCriticalAlertFlexMessage(
   user: User,
   caregiverPhone: string,
   dependentProfile: DependentProfile,
-  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" = "FALL"
+  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL"
 ) {
   if (!config.channelAccessToken) return;
   const flexMessageContent = createAlertFlexMessage(

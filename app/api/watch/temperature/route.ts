@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db/prisma';
-import { createGeneralAlertBubble } from '@/lib/line/flex-messages';
+import { prisma } from '@/lib/db/prisma';
+import { createGeneralAlertBubble, sendCriticalAlertFlexMessage } from '@/lib/line/flex-messages'; // ✅ เพิ่ม import นี้
 import { Client } from '@line/bot-sdk';
 
 const lineClient = new Client({
@@ -18,7 +18,7 @@ async function handleRequest(request: Request) {
 
     if (!targetId) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
 
-    // 🛑 ยันต์กันผี 0.0 (ถ้าค่าเป็น 0 ให้ข้ามไปเลย)
+    // 🛑 ยันต์กันผี 0.0
     if (currentTemp <= 0) {
         return NextResponse.json({ success: true, message: "Ignored 0.0 temp" });
     }
@@ -31,6 +31,7 @@ async function handleRequest(request: Request) {
               include: {
                   caregiver: { include: { user: true } },
                   tempSetting: true,
+                  // ✅ ดึง Location ล่าสุดมาด้วย (เผื่อต้องใช้ใน Map)
                   locations: { take: 1, orderBy: { timestamp: 'desc' } }
               }
           } 
@@ -47,6 +48,18 @@ async function handleRequest(request: Request) {
     // 2. Logic
     const isAbnormal = (currentTemp > maxTemp);
     const isAlertSent = dependent.isTemperatureAlertSent;
+
+    // ⭐ ย้ายการบันทึก Record มาไว้ตรงนี้ (ก่อนส่ง LINE) ⭐
+    // เพื่อให้เรามี record.id ไปแปะในปุ่ม SOS
+    const record = await prisma.temperatureRecord.create({
+        data: {
+            dependentId: dependent.id,
+            value: currentTemp,
+            status: isAbnormal ? 'ABNORMAL' : 'NORMAL',
+            timestamp: new Date(),
+        }
+    });
+
     let shouldSendLine = false;
     let newAlertStatus = isAlertSent;
     let messageType = 'NONE';
@@ -71,19 +84,18 @@ async function handleRequest(request: Request) {
         console.log(`🌡️ Temp Alert: ${messageType} (${currentTemp} °C)`);
 
         if (messageType === 'CRITICAL') {
-            // ⭐⭐⭐ แก้ตรงนี้! ใช้ createGeneralAlertBubble แทน ⭐⭐⭐
-            // จะได้ใส่ตัวเลขที่หัวข้อรองได้ชัดเจน
-            const msg = createGeneralAlertBubble(
-                "🔥 อุณหภูมิสูงผิดปกติ", // หัวข้อหลัก (สีส้ม)
-                `ตรวจพบอุณหภูมิ ${currentTemp.toFixed(1)} °C (เกินเกณฑ์ ${maxTemp} °C)`, // ✅ หัวข้อรอง (ใส่เลขตรงนี้!)
-                "กรุณาตรวจสอบผู้ป่วยทันที", // เนื้อหา
-                "#F97316", // สีส้ม
-                true // ✅ isEmergency = true (ให้มีปุ่ม 1669)
+            // ✅ เปลี่ยนมาใช้ sendCriticalAlertFlexMessage เพื่อให้ได้ปุ่ม SOS ที่ถูกต้อง
+            await sendCriticalAlertFlexMessage(
+                lineId,
+                record, // ส่ง record ที่เพิ่งสร้าง
+                user,
+                dependent.caregiver.phone || '',
+                dependent as any,
+                'TEMP' // ✅ ระบุ Type ว่าเป็น HEALTH (หรือ TEMP ก็ได้ถ้าอยากแยก)
             );
-            await lineClient.pushMessage(lineId, { type: 'flex', altText: 'แจ้งเตือนอุณหภูมิสูง', contents: msg });
         } 
         else if (messageType === 'RECOVERY') {
-            // (ส่วนสีเขียวเหมือนเดิม)
+            // (ส่วนสีเขียวใช้แบบเดิมได้)
             const msg = createGeneralAlertBubble(
                 "✅ อุณหภูมิร่างกายปกติ",
                 "อุณหภูมิลดลงอยู่ในเกณฑ์ปกติแล้ว",
@@ -95,16 +107,7 @@ async function handleRequest(request: Request) {
         }
     }
 
-    // 4. บันทึก & อัปเดต Flag (เหมือนเดิม)
-    const record = await prisma.temperatureRecord.create({
-        data: {
-            dependentId: dependent.id,
-            value: currentTemp,
-            status: isAbnormal ? 'ABNORMAL' : 'NORMAL',
-            timestamp: new Date(),
-        }
-    });
-
+    // 4. อัปเดต Flag
     if (newAlertStatus !== isAlertSent) {
         await prisma.dependentProfile.update({
             where: { id: dependent.id },

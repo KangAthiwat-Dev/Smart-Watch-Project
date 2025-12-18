@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db/prisma';
+import { prisma } from '@/lib/db/prisma'; // เช็ค path import ให้ตรงกับโปรเจกต์นะครับ
 import { createRescueGroupFlexMessage, createRescueSuccessBubble } from '@/lib/line/flex-messages';
 import { Client } from '@line/bot-sdk';
 import { AlertStatus, HelpType, UserRole } from '@prisma/client'; 
@@ -12,13 +12,14 @@ const lineClient = new Client({
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { userId, latitude: clientLat, longitude: clientLng, message } = body; 
+        // ✅ 1. รับค่า recordId และ alertType เพิ่ม
+        const { userId, latitude: clientLat, longitude: clientLng, message, recordId, alertType } = body; 
 
-        console.log("🔍 LIFF UserID:", userId);
+        console.log("🔍 SOS Request:", { userId, alertType, recordId });
 
         if (!userId) return NextResponse.json({ error: "User ID missing" }, { status: 400 });
 
-        // 1. หา User
+        // 2. หา User
         const user = await prisma.user.findUnique({
             where: { lineId: userId }, 
         });
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
         let dependentInfo = null;
         let caregiverInfo = null;
 
-        // --- Step 1: ระบุตัวตน ---
+        // --- Step 1: ระบุตัวตน (ใครเป็นคนกดแจ้ง) ---
         if (user.role === UserRole.DEPENDENT) {
             const depProfile = await prisma.dependentProfile.findUnique({
                 where: { userId: user.id },
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
              });
              if (!cgProfile || cgProfile.dependents.length === 0) return NextResponse.json({ error: "No dependents found" }, { status: 400 });
 
+             // สมมติว่า Caregiver ดูแลคนเดียว หรือเลือกคนแรก (Logic เดิมนายน้อย)
              const targetDependent = cgProfile.dependents[0]; 
              dependentId = targetDependent.id;
              reporterId = cgProfile.id; 
@@ -59,11 +61,11 @@ export async function POST(request: Request) {
              return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
         }
 
-        // --- Step 2: 🟢 หาพิกัดล่าสุดจาก Database ---
+        // --- Step 2: 🟢 หาพิกัดล่าสุด (ถ้า Client ไม่ส่งมา ให้เอาจาก DB ล่าสุด) ---
         let finalLat = clientLat;
         let finalLng = clientLng;
 
-        if (dependentId) {
+        if (dependentId && (!finalLat || !finalLng)) {
             const lastLocation = await prisma.location.findFirst({
                 where: { dependentId: dependentId },
                 orderBy: { timestamp: 'desc' } 
@@ -75,7 +77,13 @@ export async function POST(request: Request) {
             }
         }
 
-        // --- Step 3: สร้าง Alert ---
+        // --- Step 3: 📝 สร้างข้อความรายละเอียด (Details) ---
+        // เอาประเภทแจ้งเตือนและ ID เหตุการณ์ไปแปะไว้ใน details
+        let detailsText = message || "ขอความช่วยเหลือ";
+        if (alertType) detailsText = `[${alertType}] ${detailsText}`;
+        if (recordId) detailsText += ` (Ref ID: ${recordId})`;
+
+        // --- Step 4: สร้าง Alert ลงตาราง ExtendedHelp ---
         const newAlert = await prisma.extendedHelp.create({
             data: {
                 status: AlertStatus.DETECTED,
@@ -83,7 +91,8 @@ export async function POST(request: Request) {
                 dependentId: dependentId!,
                 reporterId: reporterId!,          
                 latitude: finalLat || null,   
-                longitude: finalLng || null   
+                longitude: finalLng || null,
+                details: detailsText // ✅ บันทึกรายละเอียดลงไป
             },
             include: {
                 dependent: { include: { user: true } },
@@ -91,7 +100,21 @@ export async function POST(request: Request) {
             }
         });
 
-        // --- Step 4: ส่ง LINE เข้ากลุ่มกู้ภัย ---
+        // --- Step 5: 🔄 อัปเดตสถานะ Record ต้นทาง (ถ้ามี) ---
+        // เช่น ถ้าแจ้งว่า "ล้ม" ให้ไปอัปเดตตาราง FallRecord ว่า "รับทราบแล้ว" (ACKNOWLEDGED)
+        if (recordId && alertType === 'FALL') {
+            try {
+                await prisma.fallRecord.update({
+                    where: { id: parseInt(recordId) },
+                    data: { status: 'ACKNOWLEDGED' }
+                });
+                console.log(`✅ Updated FallRecord #${recordId} to ACKNOWLEDGED`);
+            } catch (err) {
+                console.warn("⚠️ Could not update FallRecord:", err);
+            }
+        }
+
+        // --- Step 6: ส่ง LINE เข้ากลุ่มกู้ภัย ---
         const rescueGroup = await prisma.rescueGroup.findFirst({
             orderBy: { createdAt: 'desc' }
         });
@@ -99,7 +122,11 @@ export async function POST(request: Request) {
         const targetGroupId = rescueGroup?.groupId;
 
         if (targetGroupId && dependentInfo) {
-            const alertTitle = message || "🆘 ขอความช่วยเหลือด่วน";
+            // ปรับหัวข้อตามประเภทแจ้งเตือน
+            let alertTitle = message || "🆘 ขอความช่วยเหลือด่วน";
+            if (alertType === 'FALL') alertTitle = "🚨 ยืนยันเหตุการล้ม";
+            else if (alertType === 'HEALTH') alertTitle = "🚨 สัญญาณชีพผิดปกติ";
+            else if (alertType === 'ZONE') alertTitle = "🚨 แจ้งเตือนออกนอกพื้นที่";
             
             const flexMsg = createRescueGroupFlexMessage(
                 newAlert.id,
@@ -118,16 +145,14 @@ export async function POST(request: Request) {
             console.log(`✅ ส่งแจ้งเตือนไปยังกลุ่ม ${targetGroupId} สำเร็จ`);
         }
 
-        // --- ⭐ Step 5: แจ้งกลับไปหา "คนกด" (ผู้ดูแล) เป็น Flex Message ---
-        const successBubble = createRescueSuccessBubble(); // สร้าง Flex
+        // --- Step 7: แจ้งกลับไปหา "คนกด" (ผู้ดูแล) ---
+        const successBubble = createRescueSuccessBubble(); 
         
         await lineClient.pushMessage(userId, {
             type: 'flex',
             altText: '✅ แจ้งเหตุสำเร็จ! เจ้าหน้าที่กำลังตรวจสอบ',
             contents: successBubble
         });
-
-        console.log(`📩 แจ้งยืนยันกลับไปหาคนกด (${userId}) สำเร็จ`);
 
         return NextResponse.json({ success: true, alertId: newAlert.id });
 
