@@ -178,7 +178,7 @@ export default function MonitoringView({ users, initialFocusId }: MonitoringView
 
                             <GoogleMap
                                 mapContainerStyle={containerStyle}
-                                zoom={8}
+                                zoom={0.5}
                                 mapTypeId={mapType}
                                 onLoad={(map) => { mapRef.current = map; }} 
                                 options={{ 
