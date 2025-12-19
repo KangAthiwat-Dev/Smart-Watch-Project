@@ -12,6 +12,8 @@ const lineClient = new Client({
   channelSecret: process.env.LINE_CHANNEL_SECRET || "",
 });
 
+export const dynamic = 'force-dynamic';
+
 async function handleRequest(request: Request) {
   try {
     const body = await request.json();
@@ -38,7 +40,7 @@ async function handleRequest(request: Request) {
         dependentProfile: {
           include: {
             caregiver: { include: { user: true } },
-            locations: { take: 1, orderBy: { timestamp: "desc" } },
+            locations: { take: 1, orderBy: { timestamp: "desc" } }, 
             safeZones: { take: 1 },
           },
         },
@@ -53,6 +55,10 @@ async function handleRequest(request: Request) {
     const caregiver = dependent.caregiver;
     const safeZoneData = dependent.safeZones[0];
     const waitViewLocation = dependent.waitViewLocation ?? false;
+    
+    // ดึงสถานะล่าสุดจาก DB (Anti-Spam ไม้ตาย)
+    const lastStoredLocation = dependent.locations[0]; 
+    const lastStoredStatus = lastStoredLocation?.status || "SAFE";
 
     // Flag สถานะ
     let { isAlertZone1Sent, isAlertNearZone2Sent, isAlertZone2Sent } = dependent;
@@ -64,78 +70,59 @@ async function handleRequest(request: Request) {
       return NextResponse.json({ success: true, message: "Glitch Skipped" });
     }
 
-    // คำนวณ Zone ขอบเขต
     const r1 = safeZoneData?.radiusLv1 || 100;
     const r2 = safeZoneData?.radiusLv2 || 500;
     
-    // ============================================================
-    // 🚨 FIX LOGIC: แยกแยะ SOS vs ZONE BREACH
-    // ============================================================
-    
-    // นาฬิการุ่นนี้ส่ง status: 2 ทั้งตอนกดปุ่ม และตอนหลุดโซน
-    // เราจึงต้องดู "ระยะทาง" ประกอบด้วย
-    // ถ้า status 2 และ ระยะทางเกินขอบเขตโซน 2 -> ให้ถือว่าเป็น "หลุดโซน" (Zone Breach) -> เพื่อเข้า Logic กัน Spam
-    // ถ้า status 2 และ ระยะทางยังอยู่ในเขต -> ให้ถือว่าเป็น "กดปุ่ม SOS"
-    
+    // Logic แยก SOS vs Zone
     const isDistanceCritical = distInt >= r2; 
-    
-    // เป็น Manual SOS ก็ต่อเมื่อ กดมาเลข 2 และ ระยะทางต้องไม่ออกนอกเขตแบบชัดเจน
-    // (เพราะถ้าออกนอกเขตชัดเจน ให้ไปใช้ Logic Zone Alert แทน จะได้ไม่ Spam)
     const isManualSOS = (statusInt === 2) && !isDistanceCritical;
 
     let currentDBStatus: "SAFE" | "WARNING" | "DANGER" = "SAFE";
     let shouldSendLine = false;
     let alertType = "NONE";
 
-    // ✅ CASE 1: กดปุ่ม SOS (ของจริง ต้องอยู่ในบ้านหรือใกล้ๆ)
+    // ==========================================
+    // 🚨 CASE 1: MANUAL SOS (กดปุ่ม)
+    // ==========================================
     if (isManualSOS) {
-        console.log("🚨 Manual SOS Detected (Button Press)!");
+        console.log("🚨 Manual SOS Detected!");
         currentDBStatus = "DANGER";
-
         const recentSOS = await prisma.extendedHelp.findFirst({
-            where: { 
-                dependentId: dependent.id, 
-                type: "WATCH_SOS", 
-                requestedAt: { gte: new Date(Date.now() - 60000) } 
-            }
+            where: { dependentId: dependent.id, type: "WATCH_SOS", requestedAt: { gte: new Date(Date.now() - 60000) } }
         });
 
         if (!recentSOS && caregiver?.user.lineId) {
              await sendCriticalAlertFlexMessage(
               caregiver.user.lineId,
               { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
-              user,
-              caregiver.phone || "",
-              dependent as any,
-              "SOS", 
+              user, caregiver.phone || "", dependent as any, 
+              "SOS", // Type: SOS
               `🆘 แจ้งเตือน: ${dependent.firstName} กดปุ่มขอความช่วยเหลือ!`
             );
         }
     }
-    // ✅ CASE 2: ระบบโซน (รวมถึงกรณี status 2 แต่อยู่ไกล)
+    // ==========================================
+    // 🌍 CASE 2: ZONE LOGIC
+    // ==========================================
     else {
       let currentStatus = 0; 
-
       if (safeZoneData) {
         const nearR2 = Math.floor(r2 * 0.8);
-
         if (distInt <= r1) currentStatus = 0;      
         else if (distInt < nearR2) currentStatus = 1; 
         else if (distInt < r2) currentStatus = 3;     
         else currentStatus = 2; // DANGER
       }
 
-      const buffer = 20; // Buffer Zone
+      const buffer = 20;
 
       // 🟢 SAFE
       if (currentStatus === 0) {
         currentDBStatus = "SAFE";
         if (distInt <= (r1 - buffer)) {
-            if (isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent) {
+            if (lastStoredStatus !== "SAFE" || isAlertZone1Sent || isAlertZone2Sent) {
                 shouldSendLine = true; alertType = "BACK_SAFE";
-                isAlertZone1Sent = false; 
-                isAlertNearZone2Sent = false; 
-                isAlertZone2Sent = false;
+                isAlertZone1Sent = false; isAlertNearZone2Sent = false; isAlertZone2Sent = false;
             }
         }
       } 
@@ -145,50 +132,64 @@ async function handleRequest(request: Request) {
         if (!isAlertZone1Sent) { 
             shouldSendLine = true; alertType = "ZONE_1"; isAlertZone1Sent = true; 
         }
-        else if (isAlertZone2Sent || isAlertNearZone2Sent) {
+        else if (isAlertZone2Sent) {
             if (distInt <= (Math.floor(r2 * 0.8) - buffer)) {
                 shouldSendLine = true; alertType = "BACK_TO_ZONE_1";
                 isAlertNearZone2Sent = false;
             }
         }
       } 
-      // 🟠 NEAR ZONE 2
-      else if (currentStatus === 3) {
-        currentDBStatus = "DANGER";
-        if (!isAlertNearZone2Sent) {
-          shouldSendLine = true; alertType = "NEAR_ZONE_2";
-          isAlertNearZone2Sent = true; isAlertZone1Sent = true;
-        } else if (isAlertZone2Sent) { 
-           if (distInt <= (r2 - buffer)) {
-              shouldSendLine = true; alertType = "BACK_TO_NEAR_ZONE_2";
-           }
-        }
-      } 
-      // 🔴 ZONE 2 DANGER (รวมเคส Status 2 ที่หลุดออกมาไกล)
+      // 🔴 ZONE 2 DANGER
       else if (currentStatus === 2) {
         currentDBStatus = "DANGER";
-        // ใช้ Flag isAlertZone2Sent เป็นตัวกัน Spam!
-        if (!isAlertZone2Sent) { 
+        
+        // Anti-Spam Check: ถ้า Flag เป็น false แต่ใน DB ล่าสุดเป็น DANGER แล้ว = ห้ามส่ง
+        const alreadyInDanger = lastStoredStatus === "DANGER";
+
+        if (!isAlertZone2Sent && !alreadyInDanger) { 
           shouldSendLine = true; 
           alertType = "ZONE_2_DANGER"; 
-          isAlertZone2Sent = true; 
-          isAlertNearZone2Sent = true; 
-          isAlertZone1Sent = true;
-        } else {
-            console.log("⛔️ Zone 2 Alert Skipped (Already Sent)");
+          isAlertZone2Sent = true; isAlertNearZone2Sent = true; isAlertZone1Sent = true;
         }
+      }
+      // 🟠 NEAR ZONE 2
+      else if (currentStatus === 3) {
+          currentDBStatus = "DANGER";
+          if (!isAlertNearZone2Sent && lastStoredStatus !== "DANGER") {
+              shouldSendLine = true; alertType = "NEAR_ZONE_2";
+              isAlertNearZone2Sent = true; isAlertZone1Sent = true;
+          }
       }
     }
 
-    // ส่ง LINE (Zone Alerts)
+    // ==========================================
+    // 📨 SEND LINE MESSAGES
+    // ==========================================
     if (shouldSendLine && caregiver?.user.lineId && !isManualSOS) {
        const lineId = caregiver.user.lineId;
        const distText = `${distInt} ม.`;
        
+       // 🟢 กลับบ้าน
        if (alertType === "BACK_SAFE") {
            const msg = createGeneralAlertBubble("กลับเข้าสู่พื้นที่ปลอดภัย", "ผู้ป่วยกลับเข้ามาในเขตบ้านเรียบร้อยแล้ว", "ปลอดภัย", "#10B981", false);
            await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าพื้นที่", contents: msg });
-       } else if (alertType === "ZONE_1") {
+       } 
+       // 🔴 หลุดโซนอันตราย (เปลี่ยนมาใช้ Critical Alert แบบมีปุ่ม)
+       else if (alertType === "ZONE_2_DANGER") {
+           // เรียกฟังก์ชันใหญ่ (sendCriticalAlertFlexMessage)
+           // โดยส่ง Type เป็น "ZONE" เพื่อให้หัวข้อขึ้นว่า "หลุดเขตอันตราย" และมีปุ่ม SOS
+           await sendCriticalAlertFlexMessage(
+              lineId,
+              { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 }, // สร้าง Record จำลอง
+              user,
+              caregiver.phone || "",
+              dependent as any,
+              "ZONE", // ✅ ใช้ Type ZONE ตามที่นายน้อยต้องการ
+              `⚠️ แจ้งเตือน: ${dependent.firstName} ออกนอกเขตปลอดภัย! (ระยะ ${distText})`
+           );
+       }
+       // 🟡 โซนอื่นๆ (ใช้การ์ดทั่วไป)
+       else if (alertType === "ZONE_1") {
            const msg = createGeneralAlertBubble("ออกนอกพื้นที่ชั้นใน", `ระยะ ${distText}`, distText, "#F59E0B", false);
            await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนโซน 1", contents: msg });
        } else if (alertType === "BACK_TO_ZONE_1") {
@@ -197,43 +198,21 @@ async function handleRequest(request: Request) {
        } else if (alertType === "NEAR_ZONE_2") {
            const msg = createGeneralAlertBubble("ใกล้หลุดเขตปลอดภัย", `ระยะ ${distText}`, distText, "#F97316", false);
            await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนระยะ 80%", contents: msg });
-       } else if (alertType === "BACK_TO_NEAR_ZONE_2") {
-           const msg = createGeneralAlertBubble("กลับเข้าสู่ระยะเฝ้าระวัง (80%)", `ระยะ ${distText}`, distText, "#FB923C", false);
-           await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าสู่ระยะ 80%", contents: msg });
-       }
-       else if (alertType === "ZONE_2_DANGER") {
-           const msg = createGeneralAlertBubble(
-               "⚠️ ออกนอกเขตปลอดภัย!",   
-               `ผู้ป่วยออกนอกระยะที่กำหนด (${distText})`, 
-               "อันตราย",               
-               "#DC2626",              
-               false                   
-           );
-           await lineClient.pushMessage(lineId, { 
-               type: "flex", 
-               altText: "🔴 แจ้งเตือนออกนอกเขต", 
-               contents: msg 
-           });
        }
     }
 
-    // อัปเดต Flag ลง DB
+    // อัปเดต Flag
     await prisma.dependentProfile.update({
       where: { id: dependent.id },
       data: { isAlertZone1Sent, isAlertNearZone2Sent, isAlertZone2Sent },
     });
 
-    // Save Location
-    const lastLocation = await prisma.location.findFirst({
-      where: { dependentId: dependent.id }, orderBy: { timestamp: "desc" },
-    });
-    
+    // บันทึกพิกัด
     let shouldSave = false;
-    if (!lastLocation) shouldSave = true;
+    if (!lastStoredLocation) shouldSave = true;
     else {
-        const statusChanged = lastLocation.status !== currentDBStatus;
-        const timeDiff = new Date().getTime() - new Date(lastLocation.timestamp).getTime();
-        const minutesPassed = timeDiff / (1000 * 60);
+        const statusChanged = lastStoredLocation.status !== currentDBStatus;
+        const minutesPassed = (new Date().getTime() - new Date(lastStoredLocation.timestamp).getTime()) / 60000;
         if (statusChanged || minutesPassed >= 5 || isManualSOS) shouldSave = true; 
     }
 
@@ -241,21 +220,16 @@ async function handleRequest(request: Request) {
       await prisma.location.create({
         data: {
           dependentId: dependent.id,
-          latitude: lat,
-          longitude: lng,
-          battery: parseInt(battery || 0),
-          distance: distInt,
-          status: currentDBStatus,
-          timestamp: new Date(),
+          latitude: lat, longitude: lng, battery: parseInt(battery || 0),
+          distance: distInt, status: currentDBStatus, timestamp: new Date(),
         },
       });
     }
 
-    // Sync
+    // Sync Response
     const activeAlert = await prisma.extendedHelp.findFirst({
       where: { dependentId: dependent.id, status: "DETECTED" },
     });
-
     let stop_em = !activeAlert;
     if (waitViewLocation) {
       stop_em = false;
