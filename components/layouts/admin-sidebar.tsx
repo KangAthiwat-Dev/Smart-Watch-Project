@@ -14,77 +14,119 @@ import {
   Package,
   ArrowLeftRight,
 } from 'lucide-react';
-import { getUnreadAlertCount } from '@/actions/alert.actions';
+// ✅ Import Action ที่เราเพิ่งสร้าง
+import { getSidebarCounts, markAsViewed } from '@/actions/sidebar.actions';
 
 interface SidebarProps {
   isOpen: boolean;
 }
 
-const menuItems = [
-  {
-    title: 'Dashboard',
-    href: '/admin/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    title: 'ผู้ดูแล',
-    href: '/admin/caregivers',
-    icon: Users,
-  },
-  {
-    title: 'ผู้ที่มีภาวะพึ่งพิง',
-    href: '/admin/dependents',
-    icon: UserCog,
-  },
-  {
-    title: 'การแจ้งเตือน',
-    href: '/admin/alerts',
-    icon: AlertTriangle,
-    showBadge: true,
-  },
-  {
-    title: 'คลังอุปกรณ์', 
-    href: '/admin/equipment',
-    icon: Package,
-  },
-  {
-    title: 'ระบบยืม-คืน',
-    href: '/admin/transactions',
-    icon: ArrowLeftRight,
-  },
-  {
-    title: 'ติดตาม Real-time',
-    href: '/admin/monitoring',
-    icon: Watch,
-  },
-  {
-    title: 'ตั้งค่า',
-    href: '/admin/settings',
-    icon: Settings,
-  },
-];
-
 export function Sidebar({ isOpen }: SidebarProps) {
   const pathname = usePathname();
-  const [alertCount, setAlertCount] = useState(0);
+  
+  // ✅ State เก็บตัวเลข 4 หมวด
+  const [counts, setCounts] = useState({
+    alerts: 0,
+    transactions: 0, // ยืม-คืน
+    caregivers: 0,   // ผู้ดูแลใหม่
+    dependents: 0,   // ผู้พึ่งพิงใหม่
+  });
 
+  // ฟังก์ชันดึงข้อมูลล่าสุด
+  const fetchCounts = async () => {
+    try {
+        const res = await getSidebarCounts();
+        setCounts(res);
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  // 1. ดึงข้อมูลเมื่อโหลดหน้าเว็บ
   useEffect(() => {
-    const fetchInitialCount = async () => {
-        const res = await getUnreadAlertCount();
-        setAlertCount(res.count);
-    };
-    fetchInitialCount();
+    fetchCounts();
 
-    const handleAlertUpdate = (e: any) => {
-        if (typeof e.detail === 'number') {
-            setAlertCount(e.detail);
+    // Listener เผื่อมีการอัปเดตแบบ Realtime (ถ้ามี)
+    const handleAlertUpdate = () => fetchCounts();
+    window.addEventListener('alert-update', handleAlertUpdate);
+    
+    // ตั้ง Interval เช็คทุก 30 วินาที (Optional: เพื่อความสดใหม่)
+    const interval = setInterval(fetchCounts, 30000);
+
+    return () => {
+        window.removeEventListener('alert-update', handleAlertUpdate);
+        clearInterval(interval);
+    };
+  }, []);
+
+  // 2. Logic ล้างเลขแจ้งเตือนเมื่อกดเข้ามาดูหน้า (เฉพาะ Users)
+  useEffect(() => {
+    const checkAndClearBadge = async () => {
+        // ถ้าอยู่หน้าผู้ดูแล และมีเลขค้าง -> ล้างออก
+        if (pathname === '/admin/caregivers' && counts.caregivers > 0) {
+            await markAsViewed('caregivers');
+            setCounts(prev => ({ ...prev, caregivers: 0 }));
+        }
+        
+        // ถ้าอยู่หน้าผู้พึ่งพิง และมีเลขค้าง -> ล้างออก
+        if (pathname === '/admin/dependents' && counts.dependents > 0) {
+            await markAsViewed('dependents');
+            setCounts(prev => ({ ...prev, dependents: 0 }));
         }
     };
+    
+    checkAndClearBadge();
+    
+    // หมายเหตุ: หน้า Alerts และ Transactions จะไม่ล้างตอนกดเข้า
+    // เพราะมันควรจะหายไปเมื่อเรากด "จัดการ/อนุมัติ" งานเสร็จแล้ว (Auto Refresh)
+  }, [pathname, counts.caregivers, counts.dependents]);
 
-    window.addEventListener('alert-update', handleAlertUpdate);
-
-    return () => window.removeEventListener('alert-update', handleAlertUpdate);
-  }, []);
+  const menuItems = [
+    {
+      title: 'Dashboard',
+      href: '/admin/dashboard',
+      icon: LayoutDashboard,
+    },
+    {
+      title: 'ผู้ดูแล',
+      href: '/admin/caregivers',
+      icon: Users,
+      badge: counts.caregivers, // ✅ Badge คนใหม่
+    },
+    {
+      title: 'ผู้ที่มีภาวะพึ่งพิง',
+      href: '/admin/dependents',
+      icon: UserCog,
+      badge: counts.dependents, // ✅ Badge คนใหม่
+    },
+    {
+      title: 'การแจ้งเตือน',
+      href: '/admin/alerts',
+      icon: AlertTriangle,
+      badge: counts.alerts, // ✅ Badge SOS
+    },
+    {
+      title: 'คลังอุปกรณ์', 
+      href: '/admin/equipment',
+      icon: Package,
+    },
+    {
+      title: 'ระบบยืม-คืน',
+      href: '/admin/transactions',
+      icon: ArrowLeftRight,
+      badge: counts.transactions, // ✅ Badge งานรออนุมัติ (ยืม+คืน)
+    },
+    {
+      title: 'ติดตาม Real-time',
+      href: '/admin/monitoring',
+      icon: Watch,
+    },
+    {
+      title: 'ตั้งค่า',
+      href: '/admin/settings',
+      icon: Settings,
+    },
+  ];
 
   return (
     <>
@@ -125,9 +167,10 @@ export function Sidebar({ isOpen }: SidebarProps) {
                       <span className="font-medium">{item.title}</span>
                   </div>
                   
-                  {item.showBadge && alertCount > 0 && (
+                  {/* ✅ แสดง Badge (จุดแดง) ถ้ามีตัวเลข */}
+                  {item.badge !== undefined && item.badge > 0 && (
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white animate-pulse shadow-sm shadow-red-900">
-                          {alertCount > 99 ? '99+' : alertCount}
+                          {item.badge > 99 ? '99+' : item.badge}
                       </span>
                   )}
                 </Link>

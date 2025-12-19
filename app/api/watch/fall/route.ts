@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db/prisma';
+import { prisma } from '@/lib/db/prisma';
 import { sendCriticalAlertFlexMessage } from '@/lib/line/flex-messages';
 
 async function handleFall(request: Request) {
   try {
     const body = await request.json();
     
+    // รับค่าต่างๆ
     const targetId = body.users_id || body.lineId;
-    const fallStat = body.fall_status || body.status;
+    const fallStat = String(body.fall_status || body.status);
     const x = body.x_axis || body.xAxis || 0;
     const y = body.y_axis || body.yAxis || 0;
     const z = body.z_axis || body.zAxis || 0;
@@ -19,11 +20,7 @@ async function handleFall(request: Request) {
         dependentProfile: {
             include: { 
                 caregiver: { include: { user: true } },
-                // ✅ เพิ่ม: ดึง Location ล่าสุดมาด้วย (เผื่อ GPS ใน body เป็น null)
-                locations: {
-                    take: 1,
-                    orderBy: { timestamp: 'desc' }
-                }
+                // ไม่ต้องดึง locations มาเช็คโซน (แยกกันทำงาน)
             }
         }
       }
@@ -34,86 +31,49 @@ async function handleFall(request: Request) {
     const dependent = user.dependentProfile;
     const caregiver = dependent.caregiver;
 
+    // Logic Status
+    const isCritical = fallStat === "0" || fallStat === "1";
+    const dbStatus = isCritical ? 'DETECTED' : 'RESOLVED';
+
+    // 1. บันทึกการล้ม
     const fallRecord = await prisma.fallRecord.create({
       data: {
         dependentId: dependent.id,
         latitude: latitude ? parseFloat(latitude) : null,
         longitude: longitude ? parseFloat(longitude) : null,
-        xAxis: parseFloat(x),
-        yAxis: parseFloat(y),
-        zAxis: parseFloat(z),
-        status: (String(fallStat) === '0') ? 'DETECTED' : 'RESOLVED',
+        xAxis: parseFloat(String(x)),
+        yAxis: parseFloat(String(y)),
+        zAxis: parseFloat(String(z)),
+        status: dbStatus,
         timestamp: new Date(),
       },
     });
 
-    // *********** FIX ***********
-        /*
-        เพิ่ม
-        isAlertZone1Sent: true,
-        isAlertNearZone2Sent: true, 
-        isAlertZone2Sent: true,
-        notiText สำหรับรายละเอียดการแจ้งเตือนล้ม (เพิ่มใน sendCriticalAlertFlexMessage ด้วย)
-        
-        fallStat มีค่าได้ 3 แบบ:
-        "-1" = ระบบตรวจจับการล้มได้ แต่ผู้ป่วยกดยืนยันว่า "โอเค"
-        "0" = ผู้ป่วยกดปุ่ม "ไม่โอเค"
-        "1" = ไม่มีการตอบสนองภายใน 30 วินาที
-        */
-        // *********************************
+    // 2. แจ้งเตือน LINE (แยกประเภทชัดเจน)
+    if (isCritical && caregiver?.user.lineId) {
         let notiText = "";
-        if (String(fallStat) === "0" || String(fallStat) === "1") {
-            if (String(fallStat) === "0") {
-                notiText = `คุณ ${user.dependentProfile.firstName} ${user.dependentProfile.lastName} กด "ไม่โอเค" ขอความช่วยเหลือ`;
-            } else {
-                notiText = `คุณ ${user.dependentProfile.firstName} ${user.dependentProfile.lastName} ไม่มีการตอบสนองภายใน 30 วินาที`;
-            }
-            // เปิด GPS
-            await prisma.dependentProfile.update({
-                where: { id: dependent.id },
-                data: {
-                    isGpsEnabled: true,
-                    isAlertZone1Sent: true, // ถือว่าแจ้งแล้ว จะได้ไม่แจ้งซ้ำ
-                    isAlertNearZone2Sent: true, // ถือว่าแจ้งแล้ว
-                    isAlertZone2Sent: true, // ถือว่าแจ้งแล้ว
-                },
-            });
+        let specificAlertType = "FALL"; // Default
 
-            // ส่ง LINE
-            if (caregiver?.user.lineId) {
-                await sendCriticalAlertFlexMessage(
-                    caregiver.user.lineId,
-                    fallRecord,
-                    user,
-                    caregiver.phone || "",
-                    dependent as any,
-                    "FALL", // ✅ ระบุ Type ว่าเป็น FALL (จะมีปุ่ม 1669)
-                    notiText //<<<<<< เพิ่ม notiText ************************************
-                );
-            }
+        if (fallStat === "0") {
+            // กดปุ่ม SOS เอง = รู้สึกตัว
+            specificAlertType = "FALL_SOS"; 
+            notiText = `แจ้งเตือน: คุณ ${dependent.firstName} ล้มและกดปุ่มขอความช่วยเหลือ (รู้สึกตัว)`;
+        } else {
+            // หมดเวลา 30 วิ = ไม่ตอบสนอง
+            specificAlertType = "FALL_UNCONSCIOUS";
+            notiText = `ด่วน!: คุณ ${dependent.firstName} ล้มและไม่มีการตอบสนอง (อาจหมดสติ)`;
         }
-        // *********************************
 
-    // ********* Old Code *********
-    // if (String(fallStat) === '0') {
-    //     // เปิด GPS
-    //     await prisma.dependentProfile.update({
-    //         where: { id: dependent.id },
-    //         data: { isGpsEnabled: true }
-    //     });
-
-    //     // ส่ง LINE
-    //     if (caregiver?.user.lineId) {
-    //          await sendCriticalAlertFlexMessage(
-    //             caregiver.user.lineId,
-    //             fallRecord,
-    //             user,
-    //             caregiver.phone || '',
-    //             dependent as any,
-    //             'FALL' // ✅ ระบุ Type ว่าเป็น FALL (จะมีปุ่ม 1669)
-    //         );
-    //     }
-    // }
+        await sendCriticalAlertFlexMessage(
+            caregiver.user.lineId,
+            fallRecord,
+            user,
+            caregiver.phone || "",
+            dependent as any,
+            specificAlertType as any, // ส่ง Type ใหม่ไป
+            notiText
+        );
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) { 

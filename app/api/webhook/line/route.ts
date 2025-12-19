@@ -9,6 +9,7 @@ import {
   createWatchConnectionBubble,
   createBorrowReturnFlexMessage,
   createRegisterButtonBubble,
+  sendCriticalAlertFlexMessage,
 } from "@/lib/line/flex-messages";
 
 const config = {
@@ -18,7 +19,6 @@ const config = {
 
 const client = new Client(config);
 
-// เพิ่มฟังก์ชันสำหรับตรวจสอบ Signature
 function validateLineSignature(
   rawBody: string,
   signature: string | undefined
@@ -33,7 +33,6 @@ export async function POST(req: Request) {
     const signature = req.headers.get("x-line-signature") || undefined;
     const bodyText = await req.text();
 
-    // จัดการ Request ที่ว่างเปล่าทันที (Request Verify)
     if (!bodyText || bodyText.length === 0) {
       return NextResponse.json(
         { status: "ok", message: "Verification or empty body received" },
@@ -41,7 +40,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ตรวจสอบ Signature
     if (!validateLineSignature(bodyText, signature)) {
       console.warn("⚠️ Invalid LINE signature received.");
     }
@@ -53,15 +51,13 @@ export async function POST(req: Request) {
 
     await Promise.all(
       events.map(async (event) => {
-        // ============================================================
-        // 🟢 PART 1: จัดการกลุ่ม (Rescue Group Logic)
-        // ============================================================
+        // 🟢 PART 1: Rescue Group Logic
         if (event.type === "join" && event.source.type === "group") {
           const groupId = event.source.groupId;
           console.log(`🤖 บอทเข้ากลุ่ม ID: ${groupId}`);
           try {
-            await prisma.rescueGroup.deleteMany(); // ลบกลุ่มเก่า
-            await prisma.rescueGroup.create({ data: { groupId } }); // จำกลุ่มใหม่
+            await prisma.rescueGroup.deleteMany();
+            await prisma.rescueGroup.create({ data: { groupId } });
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: '✅ บันทึกกลุ่มนี้เป็น "กลุ่มแจ้งเหตุฉุกเฉิน" เรียบร้อยแล้วครับ 🚑',
@@ -78,36 +74,29 @@ export async function POST(req: Request) {
           console.log("👋 บอทออกจากกลุ่ม - ลบข้อมูลแล้ว");
         }
 
-        // *********** FIX ***********
-        // เพิ่ม feature การแจ้งเตือนการล้ม
-        // *********************************
-        // ============================================================
-        // � PART 3: Postback Action (ปุ่มกดต่างๆ)
-        // ============================================================
+        // 🟢 PART 3: Postback Action
         if (event.type === "postback") {
           const data = event.postback.data;
           const params = new URLSearchParams(data);
           const action = params.get("action");
 
+          // --- Action: ปิดเคสล้ม (Resolve Fall) ---
           if (action === "resolve_fall") {
             const recordId = parseInt(params.get("id") || "0");
             if (recordId > 0) {
               try {
-                // 1. ดึงข้อมูล Fall Record เพื่อหา dependentId
                 const fallRecord = await prisma.fallRecord.findUnique({
                   where: { id: recordId },
                   select: { dependentId: true },
                 });
 
                 if (fallRecord) {
-                  // 2. อัปเดตสถานะเป็น RESOLVED
                   await prisma.fallRecord.update({
                     where: { id: recordId },
                     data: { status: "RESOLVED" },
                   });
 
-                  // 3. ✅ รีเซ็ต Flag การแจ้งเตือนโซน ให้กลับมาทำงานใหม่ทันที
-                  // เผื่อว่าผู้ป่วยยังอยู่นอกเขต ระบบจะได้แจ้งเตือนโซนต่อได้เลย
+                  // รีเซ็ต Flag โซน
                   await prisma.dependentProfile.update({
                     where: { id: fallRecord.dependentId },
                     data: {
@@ -118,10 +107,9 @@ export async function POST(req: Request) {
                   });
                 }
 
-                // ตอบกลับผู้ใช้
                 await client.replyMessage(event.replyToken, {
                   type: "text",
-                  text: "✅ รับทราบครับ ระบบบันทึกว่าท่านได้เข้าช่วยเหลือเรียบร้อยแล้ว และจะเริ่มแจ้งเตือนโซนตามปกติครับ",
+                  text: "✅ รับทราบครับ ระบบบันทึกว่าท่านได้เข้าช่วยเหลือเรียบร้อยแล้ว",
                 });
               } catch (e) {
                 console.error("Resolve Fall Error:", e);
@@ -132,12 +120,14 @@ export async function POST(req: Request) {
               }
             }
           }
+          // --- Action: ขอความช่วยเหลือ (LINE SOS) ---
+          // เผื่อในอนาคตใช้ปุ่ม Postback แทน Text Message
+          else if (action === "trigger_sos") {
+              await handleSosRequest(event.source.userId!, event.replyToken);
+          }
         }
-        // *********************************
 
-        // ============================================================
-        // 🟡 PART 2: ตอบแชท / เมนู (Message Logic)
-        // ============================================================
+        // 🟡 PART 2: Message Logic
         if (event.type === "message" && event.message.type === "text") {
           const userMessage = event.message.text.trim();
           const senderLineId = event.source.userId;
@@ -166,12 +156,11 @@ export async function POST(req: Request) {
           else if (userMessage === "การยืม-คืนครุภัณฑ์") {
             await handleBorrowReturnRequest(senderLineId, event.replyToken);
           }
-          // --- 6. เช็คคำสั่งลงทะเบียนจาก User ทั่วไป (เผื่อคนพิมพ์เอง) ---
+          // --- 6. ลงทะเบียน ---
           else if (
             userMessage.includes("ลงทะเบียน") &&
             event.source.type === "user"
           ) {
-            // ✅ ใช้ Flex Message การ์ดลงทะเบียนแบบเดียวกัน
             const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register`;
             const flexMsg = createRegisterButtonBubble(registerUrl);
 
@@ -180,6 +169,11 @@ export async function POST(req: Request) {
               altText: "กรุณาลงทะเบียนเข้าใช้งาน",
               contents: flexMsg as any,
             });
+          }
+          // --- 7. ขอความช่วยเหลือ (SOS) ---
+          // อันนี้คีย์เวิร์ดสำคัญ! ถ้านายน้อยตั้ง Rich Menu เป็นคำนี้
+          else if (userMessage === "ขอความช่วยเหลือ" || userMessage === "แจ้งเหตุฉุกเฉิน") {
+              await handleSosRequest(senderLineId, event.replyToken);
           }
         }
       })
@@ -198,15 +192,85 @@ export async function POST(req: Request) {
 // ============================================================
 // 🛠️ Helper Functions
 // ============================================================
+// ฟังก์ชันจัดการ SOS จาก LINE (Admin Web + Rescue Group)
+async function handleSosRequest(lineId: string, replyToken: string) {
+    // 1. ดึงข้อมูล User และ Dependent
+    const caregiverUser = await prisma.user.findFirst({
+        where: { lineId },
+        include: { 
+            caregiverProfile: { 
+                include: { 
+                    dependents: { 
+                        include: { 
+                            locations: { orderBy: { timestamp: 'desc' }, take: 1 } 
+                        } 
+                    } 
+                } 
+            } 
+        }
+    });
 
-// ✅ ฟังก์ชันกลางสำหรับส่งการ์ด "กรุณาลงทะเบียน" (ใช้ซ้ำได้เลย)
+    // ถ้าไม่เจอ user ให้ส่งปุ่มลงทะเบียน
+    if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
+        await sendNotRegisteredFlex(replyToken);
+        return;
+    }
+
+    const dependent = caregiverUser.caregiverProfile.dependents[0];
+    const location = dependent.locations[0];
+    const caregiver = caregiverUser.caregiverProfile;
+
+    // 2. บันทึกลง DB (เพื่อให้ขึ้นหน้า Admin Web) ✅
+    const helpRecord = await prisma.extendedHelp.create({
+        data: {
+            reporterId: caregiver.id,
+            dependentId: dependent.id,
+            type: "LINE_SOS", // Type นี้จะไปโชว์ในหน้า Admin
+            status: "DETECTED",
+            latitude: location?.latitude || 0,
+            longitude: location?.longitude || 0,
+            details: `แจ้งเหตุฉุกเฉินเพิ่มเติมผ่าน LINE โดยคุณ ${caregiver.firstName}`,
+        }
+    });
+
+    // 3. ตอบกลับผู้ใช้ในแชทส่วนตัว ✅
+    await client.replyMessage(replyToken, {
+        type: "text",
+        text: "🚨 ระบบได้รับแจ้งเหตุแล้ว! กำลังประสานงานไปยังกลุ่มช่วยเหลือทันทีครับ"
+    });
+
+    // 4. ส่งแจ้งเตือนเข้า 'กลุ่มกู้ภัย' (Rescue Group) 🚨 ✅
+    const rescueGroup = await prisma.rescueGroup.findFirst(); // หา Group ID
+    
+    if (rescueGroup) {
+        console.log(`📣 Sending LINE SOS to Group: ${rescueGroup.groupId}`);
+        
+        await sendCriticalAlertFlexMessage(
+            rescueGroup.groupId, // ส่งเข้ากลุ่ม
+            {
+                latitude: location?.latitude || 0,
+                longitude: location?.longitude || 0,
+                timestamp: new Date(),
+                id: helpRecord.id // ส่ง ID เคสไปด้วย
+            },
+            caregiverUser, // ข้อมูล User (caregiver)
+            caregiver.phone, // เบอร์โทรติดต่อกลับ
+            dependent, // ข้อมูลผู้ป่วย
+            "SOS", // Alert Type
+            `🚨 แจ้งเหตุฉุกเฉินจากญาติ: คุณ ${caregiver.firstName} ขอความช่วยเหลือ!` // ข้อความแจ้งเตือน (Noti Text)
+        );
+    } else {
+        console.warn("⚠️ ไม่พบ Rescue Group ในระบบ (บอทยังไม่ได้ถูกเชิญเข้ากลุ่ม หรือไม่ได้ Join)");
+    }
+}
+
 async function sendNotRegisteredFlex(replyToken: string) {
-  const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register/user`; // ลิงก์ไปยังหน้าลงทะเบียน
+  const registerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/register/user`; 
   const flexMsg = createRegisterButtonBubble(registerUrl);
 
   await client.replyMessage(replyToken, {
     type: "flex",
-    altText: "ไม่พบข้อมูลลงทะเบียน", // ข้อความแจ้งเตือนถ้ามือถือไม่รองรับ Flex
+    altText: "ไม่พบข้อมูลลงทะเบียน", 
     contents: flexMsg as any,
   });
 }
@@ -229,12 +293,7 @@ async function handleSafetySettingsRequest(lineId: string, replyToken: string) {
     },
   });
 
-  // 🔴 แก้ไข: ถ้าไม่เจอข้อมูล ให้ส่ง Flex ลงทะเบียนแทน Text เดิม
-  if (
-    !caregiverUser ||
-    !caregiverUser.caregiverProfile ||
-    caregiverUser.caregiverProfile.dependents.length === 0
-  ) {
+  if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
     await sendNotRegisteredFlex(replyToken);
     return;
   }
@@ -254,6 +313,8 @@ async function handleSafetySettingsRequest(lineId: string, replyToken: string) {
   });
 }
 
+// อยู่ใน app/api/webhook/line/route.ts
+
 async function handleStatusRequest(lineId: string, replyToken: string) {
   const caregiverUser = await prisma.user.findFirst({
     where: { lineId },
@@ -272,12 +333,7 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
     },
   });
 
-  // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
-  if (
-    !caregiverUser ||
-    !caregiverUser.caregiverProfile ||
-    caregiverUser.caregiverProfile.dependents.length === 0
-  ) {
+  if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
     await sendNotRegisteredFlex(replyToken);
     return;
   }
@@ -286,6 +342,37 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
   const latestLoc = dependent.locations[0];
   const latestHr = dependent.heartRateRecords[0];
   const latestTemp = dependent.temperatureRecords[0];
+
+  // =======================================================
+  // 🔥 จุดที่แก้: ตรวจสอบว่า GPS ปิดอยู่ หรือ ข้อมูลเก่าเกิน 5 นาที
+  // =======================================================
+  const isStale = latestLoc 
+    ? (new Date().getTime() - new Date(latestLoc.timestamp).getTime() > 5 * 60 * 1000) 
+    : true;
+
+  if (!dependent.isGpsEnabled || isStale) {
+    console.log(`📡 Triggering GPS Wakeup for Dependent: ${dependent.id}`);
+
+    // 1. สั่งเปิดใน Database
+    await prisma.dependentProfile.update({
+      where: { id: dependent.id },
+      data: { waitViewLocation: true, isGpsEnabled: true },
+    });
+
+    // 2. ส่ง Flex Message บอกว่า "กำลังค้นหา..."
+    // เรียกฟังก์ชันสร้าง Flex สวยๆ ที่เราจะแปะเพิ่มด้านล่าง
+    const waitingFlex = createWaitingGpsBubble();
+
+    await client.replyMessage(replyToken, {
+        type: 'flex',
+        altText: '📡 กำลังค้นหาตำแหน่ง...',
+        contents: waitingFlex as any
+    });
+    
+    return;
+  }
+
+  // ถ้าข้อมูลสดใหม่ และ GPS เปิดอยู่แล้ว ให้ส่ง Flex Message เลย (ประหยัด Push)
   const healthData = {
     bpm: latestHr?.bpm || 0,
     temp: latestTemp?.value || 0,
@@ -295,18 +382,6 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
     updatedAt: latestLoc?.timestamp || new Date(),
   };
 
-  // *********** FIX ***********
-  // ตรวจสอบกรณีที่ GPS ปิด ให้ตั้ง waitViewLocation เป็น true และไม่ส่งสถานะ
-  // *********************************
-  if (!dependent.isGpsEnabled) {
-    await prisma.dependentProfile.update({
-      where: { id: dependent.id },
-      data: { waitViewLocation: true },
-    });
-    return;
-  }
-  // *********************************
-
   const flexMessage = createCurrentStatusBubble(dependent, healthData);
   await client.replyMessage(replyToken, {
     type: "flex",
@@ -315,44 +390,23 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
   });
 }
 
-// *********** FIX ***********
-// เพิ่มฟังก์ชัน pushStatusMessage เพื่อใช้ส่งสถานะปัจจุบันเมื่อปิดการแจ้งเตือนออกนอกเขตปลอดภัย
-// *********************************
+// ✅ FIX: ฟังก์ชัน Push Status (แก้ Logic ให้ค้นหา Dependent โดยตรง)
 export async function pushStatusMessage(lineId: string, dependentId: number) {
-    const caregiverUser = await prisma.user.findFirst({
-        where: { lineId },
+    // ค้นหา Dependent โดยตรงเลย (ชัวร์กว่า)
+    const dependent = await prisma.dependentProfile.findUnique({
+        where: { id: dependentId },
         include: {
-            caregiverProfile: {
-                include: {
-                    dependents: {
-                        include: {
-                            locations: {
-                                orderBy: { timestamp: "desc" },
-                                take: 1,
-                            },
-                            heartRateRecords: {
-                                orderBy: { timestamp: "desc" },
-                                take: 1,
-                            },
-                            temperatureRecords: {
-                                orderBy: { recordDate: "desc" },
-                                take: 1,
-                            },
-                        },
-                    },
-                },
-            },
-        },
+             locations: { orderBy: { timestamp: "desc" }, take: 1 },
+             heartRateRecords: { orderBy: { timestamp: "desc" }, take: 1 },
+             temperatureRecords: { orderBy: { recordDate: "desc" }, take: 1 },
+        }
     });
-    if (
-        !caregiverUser ||
-        !caregiverUser.caregiverProfile ||
-        caregiverUser.caregiverProfile.dependents.length === 0
-    ) {
-        console.warn("⚠️ ไม่พบข้อมูลผู้สูงอายุในการส่งสถานะปัจจุบัน");
+
+    if (!dependent) {
+        console.warn(`⚠️ ไม่พบ Dependent ID: ${dependentId} สำหรับ Push Message`);
         return;
     }
-    const dependent = caregiverUser.caregiverProfile.dependents[0];
+
     const latestLoc = dependent.locations[0];
     const latestHr = dependent.heartRateRecords[0];
     const latestTemp = dependent.temperatureRecords[0];
@@ -365,18 +419,19 @@ export async function pushStatusMessage(lineId: string, dependentId: number) {
         updatedAt: latestLoc?.timestamp || new Date(),
     };
 
-    // 2. สร้าง Flex Message
     const flexMessage = createCurrentStatusBubble(dependent, healthData);
 
-    // 3. ส่ง Push Message
-    await client.pushMessage(lineId, {
-        type: "flex",
-        altText: `สถานะปัจจุบัน: คุณ${dependent.firstName}`,
-        contents: flexMessage,
-    });
-    console.log("✅ ส่งสถานะปัจจุบันสำเร็จ");
+    try {
+        await client.pushMessage(lineId, {
+            type: "flex",
+            altText: `สถานะปัจจุบัน: คุณ${dependent.firstName}`,
+            contents: flexMessage,
+        });
+        console.log("✅ ส่งสถานะปัจจุบันสำเร็จ");
+    } catch (e) {
+        console.error("Failed to push status message:", e);
+    }
 }
-// *********************************
 
 async function handleProfileRequest(lineId: string, replyToken: string) {
   const caregiverUser = await prisma.user.findFirst({
@@ -384,7 +439,6 @@ async function handleProfileRequest(lineId: string, replyToken: string) {
     include: { caregiverProfile: { include: { dependents: true } } },
   });
 
-  // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
   if (!caregiverUser || !caregiverUser.caregiverProfile) {
     await sendNotRegisteredFlex(replyToken);
     return;
@@ -423,12 +477,7 @@ async function handleWatchConnectionRequest(
     },
   });
 
-  // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
-  if (
-    !caregiverUser ||
-    !caregiverUser.caregiverProfile ||
-    caregiverUser.caregiverProfile.dependents.length === 0
-  ) {
+  if (!caregiverUser || !caregiverUser.caregiverProfile || caregiverUser.caregiverProfile.dependents.length === 0) {
     await sendNotRegisteredFlex(replyToken);
     return;
   }
@@ -471,7 +520,6 @@ async function handleBorrowReturnRequest(lineId: string, replyToken: string) {
     },
   });
 
-  // 🔴 แก้ไข: ส่ง Flex ลงทะเบียน
   if (!caregiverUser || !caregiverUser.caregiverProfile) {
     await sendNotRegisteredFlex(replyToken);
     return;
@@ -487,4 +535,82 @@ async function handleBorrowReturnRequest(lineId: string, replyToken: string) {
     altText: "เมนูยืม-คืนครุภัณฑ์",
     contents: flexMessage as any,
   });
+}
+
+// ============================================================
+// 🎨 ฟังก์ชันสร้าง Flex Message "กำลังค้นหา" (แปะไว้ล่างสุดไฟล์)
+// ============================================================
+function createWaitingGpsBubble() {
+  return {
+    "type": "bubble",
+    "size": "kilo", // ขนาดกำลังดี ไม่ใหญ่เทอะทะ
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "📡", // ไอคอนจานดาวเทียม
+              "size": "3xl",
+              "align": "center"
+            }
+          ],
+          "backgroundColor": "#E8F3FF", // พื้นหลังวงกลมสีฟ้าอ่อน
+          "cornerRadius": "100px",
+          "width": "80px",
+          "height": "80px",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "margin": "none"
+        },
+        {
+          "type": "text",
+          "text": "กำลังเชื่อมต่อนาฬิกา...",
+          "weight": "bold",
+          "size": "lg",
+          "align": "center",
+          "margin": "lg",
+          "color": "#1D4ED8" // สีน้ำเงินเข้ม
+        },
+        {
+          "type": "text",
+          "text": "ระบบกำลังสั่งเปิด GPS และค้นหาตำแหน่งล่าสุด กรุณารอสักครู่ (ประมาณ 1-2 นาที)",
+          "wrap": true,
+          "color": "#64748B", // สีเทาอ่านง่าย
+          "size": "sm",
+          "align": "center",
+          "margin": "md"
+        },
+        {
+          "type": "separator",
+          "margin": "xl"
+        },
+        {
+          "type": "box",
+          "layout": "horizontal",
+          "contents": [
+            {
+              "type": "text",
+              "text": "⏳ รอแจ้งเตือน...",
+              "size": "xs",
+              "color": "#94A3B8",
+              "align": "center"
+            }
+          ],
+          "margin": "md"
+        }
+      ],
+      "alignItems": "center",
+      "paddingAll": "xl"
+    },
+    "styles": {
+      "footer": {
+        "separator": true
+      }
+    }
+  };
 }

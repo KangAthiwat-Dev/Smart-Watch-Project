@@ -8,7 +8,6 @@ import prisma from '@/lib/db/prisma';
 // ===============================================
 export async function getElderlySafetySettings(lineId: string) {
   try {
-    // หา User (Caregiver) -> Profile -> Dependents (เอาคนแรก)
     const caregiverUser = await prisma.user.findFirst({
       where: { lineId: lineId },
       include: {
@@ -16,7 +15,6 @@ export async function getElderlySafetySettings(lineId: string) {
           include: {
             dependents: {
                 include: {
-                    // ✅ ดึง Settings ทั้งหมดจากตาราง DependentProfile
                     safeZones: true,
                     tempSetting: true,
                     heartRateSetting: true
@@ -37,12 +35,10 @@ export async function getElderlySafetySettings(lineId: string) {
         success: true,
         data: {
             name: `${dependent.firstName} ${dependent.lastName}`,
-            
-            // ถ้าไม่มีค่า ให้ใส่ Default กัน Error
             safezone: dependent.safeZones[0] || { radiusLv1: 100, radiusLv2: 500, latitude: 13.7563, longitude: 100.5018 },
             tempSetting: dependent.tempSetting || { maxTemperature: 37.5 },
             heartSetting: dependent.heartRateSetting || { maxBpm: 120 },
-            isGpsEnabled: dependent.isGpsEnabled // ✅ ดึงค่า GPS มาด้วย
+            isGpsEnabled: dependent.isGpsEnabled
         }
     };
 
@@ -73,10 +69,16 @@ export async function updateSafezone(
         
         const dependentId = caregiverUser.caregiverProfile.dependents[0].id;
 
-        // 1. อัปเดต GPS
+        // 1. อัปเดต GPS และ ✅ รีเซ็ตค่าการแจ้งเตือน (สำคัญมาก!)
+        // เพราะถ้าเปลี่ยนรัศมี สถานะ Safe/Danger จะเปลี่ยนทันที เราต้องเคลียร์ความจำเก่าออก
         await prisma.dependentProfile.update({
             where: { id: dependentId },
-            data: { isGpsEnabled: isGpsOn }
+            data: { 
+                isGpsEnabled: isGpsOn,
+                isAlertZone1Sent: false,      // รีเซ็ต
+                isAlertNearZone2Sent: false,  // รีเซ็ต
+                isAlertZone2Sent: false       // รีเซ็ต
+            }
         });
 
         const existing = await prisma.safeZone.findFirst({ where: { dependentId } });
@@ -172,27 +174,19 @@ export async function toggleGpsMode(lineId: string, isEnabled: boolean) {
         // เพิ่มการรีเซ็ตสถานะการแจ้งเตือนเมื่อปิด GPS
         // *********************************
         const updateData: any = { isGpsEnabled: isEnabled };
-        if (!isEnabled) {
-            updateData.isAlertZone1Sent = false;
-            updateData.isAlertNearZone2Sent = false;
-            updateData.isAlertZone2Sent = false;
-        }
+        
+        // ถ้าปิด GPS หรือเปิดใหม่ ก็ควรเคลียร์สถานะเก่าทิ้งเหมือนกัน เพื่อความชัวร์
+        // หรือจะเอาแค่ตอนปิดก็ได้ แต่แนะนำให้เคลียร์ทุกครั้งที่มีการสับสวิตช์ครับ
+        updateData.isAlertZone1Sent = false;
+        updateData.isAlertNearZone2Sent = false;
+        updateData.isAlertZone2Sent = false;
+        
         // *********************************
 
-        // *********** FIX ***********
-        // แก้ไขการอัปเดตข้อมูล data เป็น updateData
-        // *********************************
         await prisma.dependentProfile.update({
             where: { id: caregiverUser.caregiverProfile.dependents[0].id },
             data: updateData,
         });
-        // *********************************
-        
-        // *********** Old ***********
-        // await prisma.dependentProfile.update({
-        //     where: { id: caregiverUser.caregiverProfile.dependents[0].id },
-        //     data: { isGpsEnabled: isEnabled }
-        // });
 
         return { success: true };
     } catch (e) {

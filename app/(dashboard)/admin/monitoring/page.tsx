@@ -4,12 +4,10 @@ import MonitoringView from '@/components/features/monitoring/monitoring-view';
 export const dynamic = 'force-dynamic';
 
 interface MonitoringPageProps {
-  // ✅ Next.js 15: searchParams เป็น Promise
   searchParams: Promise<{ focusUser?: string }>; 
 }
 
 export default async function MonitoringPage({ searchParams }: MonitoringPageProps) {
-  // 1. แกะกล่อง searchParams ดูว่ามีคนส่ง focusUser มาไหม
   const { focusUser } = await searchParams; 
   
   const dependents = await prisma.dependentProfile.findMany({
@@ -20,25 +18,51 @@ export default async function MonitoringPage({ searchParams }: MonitoringPagePro
       user: { select: { id: true, lineId: true } },
       caregiver: true,
 
+      // Location เอาอันล่าสุดมา
       locations: { orderBy: { timestamp: 'desc' }, take: 1 },
       heartRateRecords: { orderBy: { timestamp: 'desc' }, take: 1 },
       temperatureRecords: { orderBy: { recordDate: 'desc' }, take: 1 },
 
-      fallRecords: { where: { status: 'DETECTED' }, take: 1 },
+      // ✅ FIX: ยังดึง Fall มาได้ แต่เราจะไม่เอาไปใช้ Trigger Map
+      fallRecords: { 
+          where: { status: 'DETECTED' }, 
+          orderBy: { timestamp: 'desc' }, 
+          take: 1 
+      },
+      // ✅ FIX: สำคัญที่ SOS
       receivedHelp: { 
           where: { status: { in: ['DETECTED', 'ACKNOWLEDGED'] } }, 
+          orderBy: { requestedAt: 'desc' }, 
           take: 1,
       }
     }
   });
 
   const formattedUsers = dependents.map(dep => {
-    const hasFall = dep.fallRecords.length > 0;
+    // เราไม่สน dep.fallRecords แล้วครับ (ปล่อยเบลอไปเลยในหน้า Map)
+    
     const sosRecord = dep.receivedHelp[0]; 
-    const hasSOS = !!sosRecord;
-    const isEmergency = hasFall || hasSOS;
+    const hasSOS = !!sosRecord; // เช็คว่ามี SOS ค้างอยู่ไหม?
+
+    // ✅ FIX 1: Emergency เป็นจริง ก็ต่อเมื่อมี SOS เท่านั้น (ล้มเฉยๆ ไม่นับ)
+    const isEmergency = hasSOS; 
 
     const latestLoc = dep.locations[0];
+
+    // ✅ FIX 2: Privacy Filter
+    // ถ้ามี SOS -> ส่งพิกัดไปให้ Map (โชว์ตัว)
+    // ถ้าไม่มี SOS -> ส่ง null ไป (Map มองไม่เห็นตำแหน่ง)
+    const secureLocation = (hasSOS && latestLoc) ? {
+        lat: latestLoc.latitude,
+        lng: latestLoc.longitude,
+        battery: latestLoc.battery,
+        updatedAt: latestLoc.timestamp,
+        status: sosRecord.status // แสดงสถานะตาม SOS
+    } : null;
+
+    // ✅ FIX 3: Status Display
+    // แสดงเฉพาะสถานะ SOS หรือ NORMAL เท่านั้น (ไม่โชว์ว่า Fall หรือ Zone Danger ถ้าเขาไม่กดเรียก)
+    const displayStatus = hasSOS ? sosRecord.status : 'NORMAL';
 
     let rescuer = null;
     if (hasSOS && sosRecord.status === 'ACKNOWLEDGED' && sosRecord.rescuerLat && sosRecord.rescuerLng) {
@@ -57,15 +81,11 @@ export default async function MonitoringPage({ searchParams }: MonitoringPagePro
         lineId: dep.user.lineId,
         
         isEmergency: isEmergency,
-        status: sosRecord?.status || (hasFall ? 'DETECTED' : 'NORMAL'), 
-        emergencyType: hasFall ? 'FALL' : (hasSOS ? 'SOS' : null),
+        status: displayStatus, 
+        // ✅ FIX 4: ลบ Type 'FALL' ออก เหลือแค่ 'SOS'
+        emergencyType: hasSOS ? 'SOS' : null,
 
-        location: latestLoc ? {
-            lat: latestLoc.latitude,
-            lng: latestLoc.longitude,
-            battery: latestLoc.battery,
-            updatedAt: latestLoc.timestamp
-        } : null,
+        location: secureLocation, // ✅ ส่ง Location แบบมี Privacy
         
         rescuer: rescuer,
 
@@ -82,12 +102,15 @@ export default async function MonitoringPage({ searchParams }: MonitoringPagePro
     };
   });
 
-  formattedUsers.sort((a, b) => (b.isEmergency ? 1 : 0) - (a.isEmergency ? 1 : 0));
+  // Sort: เอาคนที่มี SOS (Emergency) ขึ้นบนสุด
+  formattedUsers.sort((a, b) => {
+      if (a.isEmergency !== b.isEmergency) return a.isEmergency ? -1 : 1;
+      return 0; // นอกนั้นเท่าเทียมกัน
+  });
 
   return (
     <div className="h-full flex flex-col space-y-3">
         <h1 className="text-3xl font-bold text-slate-900">ติดตามผู้ที่มีภาวะพึ่งพิง</h1>
-        {/* ✅ ส่งค่า initialFocusId ไปให้ Client Component จัดการต่อ */}
         <MonitoringView 
             users={formattedUsers} 
             initialFocusId={focusUser ? parseInt(focusUser) : undefined} 

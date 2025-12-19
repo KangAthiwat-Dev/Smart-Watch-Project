@@ -17,42 +17,54 @@ const config = {
 const lineClient = new Client(config);
 
 // =================================================================
-// 🚨 1. Alert Message (Fall & SOS & Health Critical & Zone SOS)
+// 🚨 Alert Message
 // =================================================================
 export const createAlertFlexMessage = (
-record: any, user: User, dependentProfile: DependentProfile & { locations?: any[]; }, alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL", notiText: string = ""): FlexBubble => {
+  record: any, 
+  user: User, 
+  dependentProfile: DependentProfile & { locations?: any[]; }, 
+  // ✅ เพิ่ม Type ใหม่เข้าไปใน Definition
+  alertType: "FALL" | "FALL_SOS" | "FALL_UNCONSCIOUS" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL", 
+  notiText: string = ""
+): FlexBubble => {
   // 1. ธีมสี & หัวข้อ
   let headerText = "แจ้งเตือน";
   let startColor = "#FF416C";
   let endColor = "#FF4B2B";
 
-  if (alertType === "FALL") {
-    headerText = "ตรวจพบการล้ม";
+  // --- แยกประเภทการล้ม ---
+  if (alertType === "FALL_SOS") {
+    headerText = "ล้ม (กดขอความช่วยเหลือ)"; // รู้สึกตัว
     startColor = "#FF416C"; // แดงอมชมพู
     endColor = "#FF4B2B";
-  } else if (alertType === "SOS") {
+  } else if (alertType === "FALL_UNCONSCIOUS") {
+    headerText = "ล้ม (หมดสติ/ไม่ตอบสนอง)"; // 🚨 วิกฤต!
+    startColor = "#991B1B"; // แดงเลือดหมูเข้ม
+    endColor = "#7F1D1D";   // แดงเกือบดำ (ให้ดูน่ากลัว)
+  } else if (alertType === "FALL") {
+    // เผื่อเคสเก่าหลุดมา
+    headerText = "ตรวจพบการล้ม";
+    startColor = "#FF416C"; 
+    endColor = "#FF4B2B";
+  } 
+  // --- ประเภทอื่นๆ ---
+  else if (alertType === "SOS") {
     headerText = "ขอความช่วยเหลือ";
-    startColor = "#FF8008"; // ส้มเหลือง
+    startColor = "#FF8008"; 
     endColor = "#FFC837";
   } else if (alertType === "ZONE") {
     headerText = "หลุดเขตอันตราย";
-    startColor = "#D90429"; // แดงเข้ม
+    startColor = "#D90429"; 
     endColor = "#EF233C";
-  }
-  // ✅ เพิ่ม HEART (ธีมสีแดงหัวใจ)
-  else if (alertType === "HEART") {
+  } else if (alertType === "HEART") {
     headerText = "ชีพจรผิดปกติ";
-    startColor = "#DC2626"; // แดงสด
-    endColor = "#991B1B"; // แดงเลือดหมู
-  }
-  // ✅ เพิ่ม TEMP (ธีมสีส้มร้อนแรง)
-  else if (alertType === "TEMP") {
+    startColor = "#DC2626"; 
+    endColor = "#991B1B"; 
+  } else if (alertType === "TEMP") {
     headerText = "อุณหภูมิสูง";
-    startColor = "#F97316"; // ส้ม
-    endColor = "#EA580C"; // ส้มอิฐ
-  }
-  // (Optional) HEALTH เดิมเผื่อมีใช้อยู่
-  else if (alertType === "HEALTH") {
+    startColor = "#F97316"; 
+    endColor = "#EA580C"; 
+  } else if (alertType === "HEALTH") {
     headerText = "สุขภาพผิดปกติ";
     startColor = "#F2994A";
     endColor = "#F2C94C";
@@ -63,23 +75,15 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
   const time = format(new Date(eventTimeRaw), "HH:mm น.", { locale: th });
   const date = format(new Date(eventTimeRaw), "d MMM yyyy", { locale: th });
 
-  // 3. พิกัด (Fallback Logic)
+  // 3. พิกัด
   let lat = record.latitude ? parseFloat(record.latitude) : null;
   let lng = record.longitude ? parseFloat(record.longitude) : null;
 
-  // กันเหนียว: ถ้าพิกัดเป็น 0,0 ให้ถือว่าไม่มีพิกัด
-  if (lat === 0 && lng === 0) {
-    lat = null;
-    lng = null;
-  }
+  if (lat === 0 && lng === 0) { lat = null; lng = null; }
 
   const isFallbackLocation = !lat || !lng;
 
-  if (
-    isFallbackLocation &&
-    dependentProfile.locations &&
-    dependentProfile.locations.length > 0
-  ) {
+  if (isFallbackLocation && dependentProfile.locations && dependentProfile.locations.length > 0) {
     lat = dependentProfile.locations[0].latitude;
     lng = dependentProfile.locations[0].longitude;
   }
@@ -88,13 +92,11 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
   const mapKey = process.env.NEXT_PUBLIC_GOOGLE_MAP;
   const liffBaseUrl = process.env.LIFF_BASE_URL;
 
-  const mapImageUrl =
-    hasLocation && mapKey
+  const mapImageUrl = hasLocation && mapKey
       ? `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=16&size=800x400&maptype=roadmap&markers=color:red%7C${lat},${lng}&key=${mapKey}`
       : "https://cdn-icons-png.flaticon.com/512/10337/10337160.png";
 
-  const navigateUrl =
-    hasLocation && liffBaseUrl
+  const navigateUrl = hasLocation && liffBaseUrl
       ? `${liffBaseUrl}/location?lat=${lat}&lng=${lng}&mode=navigate&id=${dependentProfile.id}`
       : `http://maps.google.com/?q=${lat},${lng}`;
 
@@ -103,44 +105,20 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
   // 4. 🔥 จัดการปุ่ม
   const buttonContents: any[] = [];
 
-  const broadcastUrl = `${process.env.LIFF_BASE_URL_TRIGGER}?id=${
-    record.id || 0
-  }&type=${alertType}`;
-
-  if (alertType !== "SOS") {
-    buttonContents.push({
-      type: "button",
-      style: "primary",
-      color: "#EF4444",
-      margin: "sm",
-      height: "md",
-      action: {
-        type: "uri",
-        label: "ขอความช่วยเหลือเพิ่มเติม",
-        uri: broadcastUrl,
-      },
-    });
-
-    // *********** FIX ***********
-    // เพิ่มปุ่มช่วยเหลือด้วยตนเอง กรณี FALL
-    // *********************************
-    if (alertType === "FALL") {
-      buttonContents.push({
-        type: "button",
-        style: "secondary", // ใช้แบบรอง
-        color: "#10B981", // สีเขียว
-        margin: "sm",
-        height: "md",
-        action: {
-          type: "postback",
-          label: "เข้าช่วยเหลือด้วยตนเอง",
-          data: `action=resolve_fall&id=${record.id || 0}`,
-          displayText: "เข้าช่วยเหลือด้วยตนเองเรียบร้อยแล้ว", // ข้อความที่จะพิมพ์แทนผู้ใช้
-        },
-      });
-    }
-    // *********************************
-  }
+  // ปุ่มขอความช่วยเหลือ (แสดงเสมอ)
+  buttonContents.push({
+    type: "button",
+    style: "primary",
+    color: "#EF4444", 
+    margin: "sm",
+    height: "md",
+    action: {
+      type: "postback",
+      label: "ขอความช่วยเหลือเพิ่มเติม",
+      data: `action=trigger_sos&id=${record.id || 0}`,
+      displayText: "ขอความช่วยเหลือเพิ่มเติมด่วน!",
+    },
+  });
 
   return {
     type: "bubble",
@@ -159,14 +137,14 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
           background: {
             type: "linearGradient",
             angle: "135deg",
-            startColor: startColor,
+            startColor: startColor, // ใช้สีตามความรุนแรงที่เราตั้งไว้
             endColor: endColor,
           },
           cornerRadius: "xxl",
           contents: [
             {
               type: "text",
-              text: headerText,
+              text: headerText, // ข้อความเปลี่ยนตามประเภท
               weight: "bold",
               size: "xl",
               color: "#FFFFFF",
@@ -223,7 +201,7 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
             },
           ],
         },
-        // Info
+        // Info & Details
         {
           type: "box",
           layout: "vertical",
@@ -242,44 +220,16 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
               type: "box",
               layout: "horizontal",
               contents: [
-                {
-                  type: "text",
-                  text: "📅 วันที่",
-                  size: "sm",
-                  color: "#64748B",
-                  flex: 2,
-                },
-                {
-                  type: "text",
-                  text: date,
-                  size: "sm",
-                  color: "#334155",
-                  flex: 3,
-                  weight: "bold",
-                  align: "end",
-                },
+                { type: "text", text: "📅 วันที่", size: "sm", color: "#64748B", flex: 2 },
+                { type: "text", text: date, size: "sm", color: "#334155", flex: 3, weight: "bold", align: "end" },
               ],
             },
             {
               type: "box",
               layout: "horizontal",
               contents: [
-                {
-                  type: "text",
-                  text: "⏰ เวลา",
-                  size: "sm",
-                  color: "#64748B",
-                  flex: 2,
-                },
-                {
-                  type: "text",
-                  text: time,
-                  size: "sm",
-                  color: "#334155",
-                  flex: 3,
-                  weight: "bold",
-                  align: "end",
-                },
+                { type: "text", text: "⏰ เวลา", size: "sm", color: "#64748B", flex: 2 },
+                { type: "text", text: time, size: "sm", color: "#334155", flex: 3, weight: "bold", align: "end" },
               ],
             },
             { type: "separator", color: "#E2E8F0", margin: "md" },
@@ -288,56 +238,35 @@ record: any, user: User, dependentProfile: DependentProfile & { locations?: any[
               layout: "horizontal",
               margin: "md",
               contents: [
+                { type: "text", text: "📍 พิกัด", size: "sm", color: "#64748B", flex: 1 },
                 {
                   type: "text",
-                  text: "📍 พิกัด",
-                  size: "sm",
-                  color: "#64748B",
-                  flex: 1,
-                },
-                {
-                  type: "text",
-                  text: hasLocation
-                    ? `${lat?.toFixed(5)}, ${lng?.toFixed(5)}`
-                    : "ไม่พบ GPS",
+                  text: hasLocation ? `${lat?.toFixed(5)}, ${lng?.toFixed(5)}` : "ไม่พบ GPS",
                   size: "xxs",
                   color: hasLocation ? "#111827" : "#EF4444",
                   flex: 4,
                   align: "end",
                   wrap: true,
-                  action: {
-                    type: "uri",
-                    label: "เปิดแผนที่",
-                    uri: navigateUrl,
-                  },
+                  action: { type: "uri", label: "เปิดแผนที่", uri: navigateUrl },
                 },
               ],
             },
-            // *********** FIX ***********
-            // เพิ่ม notiText (ถ้ามี) และ ปุ่ม ด้านล่าง ถ้าเป็นการล้ม
-            // *********************************
+            // รายละเอียดข้อความ (notiText)
             ...(notiText
               ? [
+                  { type: "separator", color: "#E2E8F0", margin: "md" } as any,
                   {
-                    type: "separator",
-                    color: "#E2E8F0",
+                    type: "text",
+                    text: notiText,
+                    weight: "bold",
+                    size: "sm",
+                    color: "#334155",
+                    align: "center",
+                    wrap: true,
                     margin: "md",
-                  },
-                  [
-                    {
-                      type: "text",
-                      text: notiText,
-                      weight: "bold",
-                      size: "sm",
-                      color: "#334155", //
-                      align: "center",
-                      wrap: true,
-                      margin: "sm",
-                    } as any,
-                  ],
+                  } as any,
                 ]
               : []),
-            // ✅ เพิ่ม notiText ตรงนี้ (ถ้ามี)
           ],
         },
         // Buttons
@@ -363,8 +292,8 @@ export async function sendCriticalAlertFlexMessage(
   user: User,
   caregiverPhone: string,
   dependentProfile: DependentProfile,
-  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP", // ✅ ตัวแปรที่ 6 (ประเภทการแจ้งเตือน)
-  notiText: string // ✅ ตัวแปรที่ 7 (ข้อความแจ้งเตือน)
+  alertType: "FALL" | "FALL_SOS" | "FALL_UNCONSCIOUS" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP", 
+  notiText: string 
 ) {
   if (!config.channelAccessToken) return;
   
