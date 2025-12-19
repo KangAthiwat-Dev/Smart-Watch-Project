@@ -56,9 +56,13 @@ enum BorrowStatus {
     RETURN_FAILED
 }
 
+// *************** FIX ***************
+// เพิ่ม NEAR_DANGER สำหรับระยะ 80%
+// **********************************
 enum ZoneStatus {
     SAFE
     WARNING
+    NEAR_DANGER
     DANGER
 }
 
@@ -183,6 +187,12 @@ model DependentProfile {
     tempSetting TemperatureSettings?
 
     isGpsEnabled Boolean @default(true)
+
+    // ************** FIX **************
+    // เพิ่มฟิลด์ waitViewLocation สำหรับระบุว่ารอการดูตำแหน่งหรือไม่
+    // *********************************
+    waitViewLocation Boolean @default(false)
+    // *********************************
 
     isHeartRateAlertSent Boolean @default(false)
     isTemperatureAlertSent Boolean @default(false)

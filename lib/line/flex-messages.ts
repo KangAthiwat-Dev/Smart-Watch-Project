@@ -20,11 +20,7 @@ const lineClient = new Client(config);
 // 🚨 1. Alert Message (Fall & SOS & Health Critical & Zone SOS)
 // =================================================================
 export const createAlertFlexMessage = (
-  record: any,
-  user: User,
-  dependentProfile: DependentProfile & { locations?: any[] },
-  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL"
-): FlexBubble => {
+record: any, user: User, dependentProfile: DependentProfile & { locations?: any[]; }, alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL", notiText: string = ""): FlexBubble => {
   // 1. ธีมสี & หัวข้อ
   let headerText = "แจ้งเตือน";
   let startColor = "#FF416C";
@@ -42,18 +38,18 @@ export const createAlertFlexMessage = (
     headerText = "หลุดเขตอันตราย";
     startColor = "#D90429"; // แดงเข้ม
     endColor = "#EF233C";
-  } 
+  }
   // ✅ เพิ่ม HEART (ธีมสีแดงหัวใจ)
   else if (alertType === "HEART") {
     headerText = "ชีพจรผิดปกติ";
     startColor = "#DC2626"; // แดงสด
-    endColor = "#991B1B";   // แดงเลือดหมู
+    endColor = "#991B1B"; // แดงเลือดหมู
   }
   // ✅ เพิ่ม TEMP (ธีมสีส้มร้อนแรง)
   else if (alertType === "TEMP") {
     headerText = "อุณหภูมิสูง";
     startColor = "#F97316"; // ส้ม
-    endColor = "#EA580C";   // ส้มอิฐ
+    endColor = "#EA580C"; // ส้มอิฐ
   }
   // (Optional) HEALTH เดิมเผื่อมีใช้อยู่
   else if (alertType === "HEALTH") {
@@ -124,6 +120,26 @@ export const createAlertFlexMessage = (
         uri: broadcastUrl,
       },
     });
+
+    // *********** FIX ***********
+    // เพิ่มปุ่มช่วยเหลือด้วยตนเอง กรณี FALL
+    // *********************************
+    if (alertType === "FALL") {
+      buttonContents.push({
+        type: "button",
+        style: "secondary", // ใช้แบบรอง
+        color: "#10B981", // สีเขียว
+        margin: "sm",
+        height: "md",
+        action: {
+          type: "postback",
+          label: "เข้าช่วยเหลือด้วยตนเอง",
+          data: `action=resolve_fall&id=${record.id || 0}`,
+          displayText: "เข้าช่วยเหลือด้วยตนเองเรียบร้อยแล้ว", // ข้อความที่จะพิมพ์แทนผู้ใช้
+        },
+      });
+    }
+    // *********************************
   }
 
   return {
@@ -297,6 +313,31 @@ export const createAlertFlexMessage = (
                 },
               ],
             },
+            // *********** FIX ***********
+            // เพิ่ม notiText (ถ้ามี) และ ปุ่ม ด้านล่าง ถ้าเป็นการล้ม
+            // *********************************
+            ...(notiText
+              ? [
+                  {
+                    type: "separator",
+                    color: "#E2E8F0",
+                    margin: "md",
+                  },
+                  [
+                    {
+                      type: "text",
+                      text: notiText,
+                      weight: "bold",
+                      size: "sm",
+                      color: "#334155", //
+                      align: "center",
+                      wrap: true,
+                      margin: "sm",
+                    } as any,
+                  ],
+                ]
+              : []),
+            // ✅ เพิ่ม notiText ตรงนี้ (ถ้ามี)
           ],
         },
         // Buttons
@@ -322,14 +363,17 @@ export async function sendCriticalAlertFlexMessage(
   user: User,
   caregiverPhone: string,
   dependentProfile: DependentProfile,
-  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL"
+  alertType: "FALL" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP", // ✅ ตัวแปรที่ 6 (ประเภทการแจ้งเตือน)
+  notiText: string // ✅ ตัวแปรที่ 7 (ข้อความแจ้งเตือน)
 ) {
   if (!config.channelAccessToken) return;
+  
   const flexMessageContent = createAlertFlexMessage(
     record,
     user,
     dependentProfile,
-    alertType
+    alertType,
+    notiText
   );
   try {
     await lineClient.pushMessage(recipientLineId, {
@@ -1498,14 +1542,16 @@ export const createBorrowReturnFlexMessage = (
   caregiverProfile: any,
   activeBorrow: any // รายการล่าสุด (ถ้ามี)
 ): FlexBubble => {
-  const liffBase = process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
-  
+  const liffBase =
+    process.env.LIFF_BASE_URL || "https://liff.line.me/YOUR_LIFF_ID";
+
   // ✅ ลิงก์เดียว เข้าไปหน้าเมนูรวม (ไปจัดการ Logic ต่อในเว็บ)
   const menuUrl = `${liffBase}/equipment`;
 
   // ดึงสถานะปัจจุบัน (เอาไว้โชว์ให้รู้สถานะคร่าวๆ ก่อนกดเข้าไป)
   const status = activeBorrow?.status || "NONE";
-  const equipmentName = activeBorrow?.items?.[0]?.equipment?.name || "อุปกรณ์ติดตาม";
+  const equipmentName =
+    activeBorrow?.items?.[0]?.equipment?.name || "อุปกรณ์ติดตาม";
 
   // ตั้งค่าสีและข้อความตามสถานะล่าสุด
   let headerTitle = "บริการอุปกรณ์";
@@ -1546,7 +1592,7 @@ export const createBorrowReturnFlexMessage = (
       themeColor = "#F97316"; // ส้มเข้ม
       bgColor = "#FFF7ED";
       break;
-      
+
     case "RETURN_FAILED":
       headerTitle = "⚠️ การคืนมีปัญหา";
       statusText = "ตรวจสอบไม่ผ่าน";
@@ -1599,8 +1645,8 @@ export const createBorrowReturnFlexMessage = (
               text: `ผู้ดูแล: คุณ${caregiverProfile?.firstName || "-"}`,
               color: "#FFFFFFCC", // White with opacity
               size: "xs",
-              margin: "sm"
-            }
+              margin: "sm",
+            },
           ],
         },
         // 2. Content Area
@@ -1622,7 +1668,7 @@ export const createBorrowReturnFlexMessage = (
                   url: "https://cdn-icons-png.flaticon.com/512/3661/3661391.png", // รูปนาฬิกา
                   size: "sm",
                   aspectMode: "fit",
-                  flex: 0
+                  flex: 0,
                 },
                 // Text Detail
                 {
@@ -1635,7 +1681,7 @@ export const createBorrowReturnFlexMessage = (
                       weight: "bold",
                       size: "sm",
                       color: "#334155",
-                      wrap: true
+                      wrap: true,
                     },
                     {
                       type: "text",
@@ -1643,13 +1689,13 @@ export const createBorrowReturnFlexMessage = (
                       size: "xs",
                       color: "#64748B",
                       wrap: true,
-                      margin: "xs"
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
+                      margin: "xs",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
         // 3. Footer Button (ปุ่มเดียวเข้าเมนู)
         {
@@ -1666,18 +1712,18 @@ export const createBorrowReturnFlexMessage = (
               action: {
                 type: "uri",
                 label: "จัดการอุปกรณ์",
-                uri: menuUrl
-              }
-            }
-          ]
-        }
+                uri: menuUrl,
+              },
+            },
+          ],
+        },
       ],
     },
     styles: {
       footer: {
-        separator: false
-      }
-    }
+        separator: false,
+      },
+    },
   };
 };
 

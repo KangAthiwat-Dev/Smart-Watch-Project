@@ -164,12 +164,35 @@ export async function toggleGpsMode(lineId: string, isEnabled: boolean) {
             include: { caregiverProfile: { include: { dependents: true } } }
         });
         
-        if (!caregiverUser?.caregiverProfile?.dependents[0]) return { success: false, error: 'User not found' };
-        
+        if (!caregiverUser?.caregiverProfile?.dependents[0]) {
+            return { success: false, error: 'User not found' };
+        }
+
+        // *********** FIX ***********
+        // เพิ่มการรีเซ็ตสถานะการแจ้งเตือนเมื่อปิด GPS
+        // *********************************
+        const updateData: any = { isGpsEnabled: isEnabled };
+        if (!isEnabled) {
+            updateData.isAlertZone1Sent = false;
+            updateData.isAlertNearZone2Sent = false;
+            updateData.isAlertZone2Sent = false;
+        }
+        // *********************************
+
+        // *********** FIX ***********
+        // แก้ไขการอัปเดตข้อมูล data เป็น updateData
+        // *********************************
         await prisma.dependentProfile.update({
             where: { id: caregiverUser.caregiverProfile.dependents[0].id },
-            data: { isGpsEnabled: isEnabled }
+            data: updateData,
         });
+        // *********************************
+        
+        // *********** Old ***********
+        // await prisma.dependentProfile.update({
+        //     where: { id: caregiverUser.caregiverProfile.dependents[0].id },
+        //     data: { isGpsEnabled: isEnabled }
+        // });
 
         return { success: true };
     } catch (e) {
