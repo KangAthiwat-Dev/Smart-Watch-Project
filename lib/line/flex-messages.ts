@@ -379,7 +379,7 @@ export const createGeneralAlertBubble = (
           contents: [
             {
               type: "text",
-              text: isEmergency ? "⚠️ แจ้งเตือนระบบ" : "✅ สถานะปลอดภัย",
+              text: isEmergency ? "แจ้งเตือนระบบ" : "สถานะปลอดภัย",
               weight: "bold",
               color: "#FFFFFFCC",
               size: "xs",
