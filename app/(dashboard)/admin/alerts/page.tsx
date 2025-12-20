@@ -9,7 +9,7 @@ import { AlertsAutoRefresh } from '@/components/features/alerts/alerts-auto-refr
 export const dynamic = 'force-dynamic';
 
 async function getAlerts() {
-  // ✅ 1. ดึงเฉพาะ SOS (ExtendedHelp) เท่านั้น ตัดการล้มออกตามคำสั่งนายน้อย
+  // ✅ 1. ดึงเฉพาะ SOS (ExtendedHelp) เท่านั้น
   const soss = await prisma.extendedHelp.findMany({
     orderBy: { requestedAt: 'desc' },
     include: { 
@@ -25,16 +25,22 @@ async function getAlerts() {
   });
 
   // 2. แปลงข้อมูล
-  const combined = soss.map(s => ({
-      id: `sos-${s.id}`,
-      type: 'SOS',
-      status: s.status, // DETECTED, ACKNOWLEDGED, RESOLVED
-      victimName: s.dependent ? `${s.dependent.firstName} ${s.dependent.lastName}` : 'ไม่ระบุชื่อ',
-      userId: s.dependent?.user?.id,
-      time: s.requestedAt,
-      lat: s.latitude || 0,
-      lng: s.longitude || 0,
-  })).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  const combined = soss.map(s => {
+      // 🔥🔥🔥 แก้ตรงนี้ครับ: บวกเวลา 7 ชั่วโมง (25200000 ms) ให้มันเป็นเวลาไทยดื้อๆ เลย
+      // เพื่อชดเชยเวลา Server Vercel ที่เป็น UTC
+      const thaiTime = new Date(new Date(s.requestedAt).getTime() + (7 * 60 * 60 * 1000));
+
+      return {
+          id: `sos-${s.id}`,
+          type: 'SOS',
+          status: s.status, // DETECTED, ACKNOWLEDGED, RESOLVED
+          victimName: s.dependent ? `${s.dependent.firstName} ${s.dependent.lastName}` : 'ไม่ระบุชื่อ',
+          userId: s.dependent?.user?.id,
+          time: thaiTime, // ✅ ใช้เวลาที่บวกแล้ว
+          lat: s.latitude || 0,
+          lng: s.longitude || 0,
+      };
+  }).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   return combined;
 }
@@ -51,7 +57,6 @@ export default async function AlertsPage() {
       <div className="flex shrink-0 items-center justify-between">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">ศูนย์แจ้งเตือนเหตุ</h1>
-          {/* แก้คำอธิบายให้ตรง */}
           <p className="text-slate-500">รายการขอความช่วยเหลือฉุกเฉิน</p>
         </div>
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white shadow-lg shadow-red-500/30">
@@ -157,6 +162,7 @@ export default async function AlertsPage() {
                           </div>
                           <div className="flex items-center gap-1 text-slate-400">
                             <Clock className="h-3.5 w-3.5" />
+                            {/* ✅ ตรงนี้จะแสดงเวลาไทยที่ถูกต้องแล้วครับ */}
                             <span>{format(new Date(alert.time), "d MMM HH:mm", { locale: th })} น.</span>
                           </div>
                         </div>
@@ -170,7 +176,6 @@ export default async function AlertsPage() {
                             alert.status === 'ACKNOWLEDGED' ? 'bg-amber-100 text-amber-700 border-amber-200' :
                             'bg-slate-100 text-slate-500 border-slate-200'
                         }`}>
-                            {/* Icon สถานะเล็กๆ ใน Badge */}
                             {alert.status === 'DETECTED' && <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span></span>}
                             {alert.status === 'ACKNOWLEDGED' && <Loader2 className="h-3 w-3 animate-spin" />}
                             {alert.status === 'RESOLVED' && <CheckCircle2 className="h-3 w-3" />}
