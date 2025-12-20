@@ -36,6 +36,7 @@ enum AlertStatus {
 
 enum HelpType {
     LINE_SOS
+    WATCH_SOS
     FALL_CONSCIOUS
     FALL_UNCONSCIOUS
     HEART_RATE

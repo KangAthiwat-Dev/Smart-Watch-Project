@@ -99,7 +99,7 @@ async function handleRequest(request: Request) {
               caregiver.user.lineId,
               { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
               user, caregiver.phone || "", dependent as any, "SOS", 
-              `🆘 แจ้งเตือน: ${dependent.firstName} กดปุ่มขอความช่วยเหลือ!`
+              `แจ้งเตือน: ${dependent.firstName} กดปุ่มขอความช่วยเหลือ!`
             );
         }
     }

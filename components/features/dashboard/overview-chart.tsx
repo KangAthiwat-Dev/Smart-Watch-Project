@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Bar,
   BarChart,
@@ -97,6 +97,14 @@ export default function OverviewChart({ data }: OverviewChartProps) {
   // 1. Change default state from "area" to "bar"
   const [chartType, setChartType] = useState("bar");
   const [range, setRange] = useState<"day" | "week" | "month">("week");
+  
+  // ✅ เก็บค่าเดือนใน State เพื่อให้แสดงผลฝั่ง Client เท่านั้น (แก้เรื่องเวลา Vercel เพี้ยน)
+  const [currentMonth, setCurrentMonth] = useState("");
+
+  useEffect(() => {
+    // โค้ดในนี้จะรันบน Browser เท่านั้น ซึ่งเป็นเวลาไทยแน่นอน
+    setCurrentMonth(format(new Date(), "MMMM yyyy", { locale: th }));
+  }, []);
 
   const safeData = data || { day: [], week: [], month: [] };
   const currentData = safeData[range] || [];
@@ -114,8 +122,6 @@ export default function OverviewChart({ data }: OverviewChartProps) {
     { name: "โซน", value: totalZone, color: COLORS.zone },
   ].filter((item) => item.value > 0);
 
-  const currentMonth = format(new Date(), "MMMM yyyy", { locale: th });
-
   return (
     <div className="w-full h-full p-6 bg-white rounded-[32px] border border-blue-100 shadow-[0_2px_40px_-10px_rgba(59,130,246,0.1)] flex flex-col relative overflow-hidden group">
       
@@ -132,8 +138,9 @@ export default function OverviewChart({ data }: OverviewChartProps) {
             <span>สถิติความปลอดภัย</span>
           </h3>
           <div className="flex items-center gap-2 mt-2 ml-14">
-            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full">
-              {currentMonth}
+            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full min-w-[100px] h-[28px] flex items-center justify-center">
+              {/* ✅ แสดงผลเดือนที่ดึงจาก Client */}
+              {currentMonth || <span className="animate-pulse">...</span>}
             </p>
           </div>
         </div>
@@ -161,7 +168,6 @@ export default function OverviewChart({ data }: OverviewChartProps) {
               <SelectValue placeholder="รูปแบบกราฟ" />
             </SelectTrigger>
             <SelectContent>
-              {/* 2. Removed Area Option */}
               <SelectItem value="bar">แท่ง</SelectItem>
               <SelectItem value="line">เส้น</SelectItem>
               <SelectItem value="pie">วงกลม</SelectItem>
@@ -223,7 +229,6 @@ export default function OverviewChart({ data }: OverviewChartProps) {
               <Line type="monotone" dataKey="zone" name="โซน" stroke={COLORS.zone} strokeWidth={3} dot={{ fill: COLORS.zone, r: 4 }} activeDot={{ r: 6 }} filter="url(#lineShadow)" />
             </LineChart>
           ) : (
-             // Default is now BarChart since Area is removed
             <BarChart data={currentData} barGap={8}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#DBEAFE" />
               <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} fontWeight={600} tickLine={false} axisLine={false} dy={15} />

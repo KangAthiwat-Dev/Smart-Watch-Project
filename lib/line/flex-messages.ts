@@ -1983,7 +1983,7 @@ export function createRescueGroupFlexMessage(
             },
             {
               type: "text",
-              text: `Ref ID: #${alertId}`,
+              text: `ID: ${alertId}`,
               size: "xs",
               color: "#FFFFFFCC",
               align: "center",
