@@ -76,7 +76,7 @@ async function handleRequest(request: Request) {
     let shouldSendLine = false;
     let alertType = "NONE";
 
-    // 🕒 TIME LOCK (สำหรับ Check Logic ขากลับ)
+    // 🕒 TIME LOCK
     const lastLocation = dependent.locations[0];
     const now = new Date();
     let timeDiffSec = 9999; 
@@ -154,7 +154,7 @@ async function handleRequest(request: Request) {
       } 
       // 🟠 NEAR ZONE 2 (3) - 80%
       else if (currentStatus === 3) {
-          currentDBStatus = "DANGER"; // สถานะ DANGER
+          currentDBStatus = "DANGER"; 
           
           // ขาออก (เพิ่งแตะ 80%)
           if (!isAlertNearZone2Sent) {
@@ -174,9 +174,9 @@ async function handleRequest(request: Request) {
       }
       // 🔴 ZONE 2 DANGER (2)
       else if (currentStatus === 2) {
-        currentDBStatus = "DANGER"; // สถานะ DANGER (เหมือน 80% เลยทำให้ Filter เก่าทำงานผิด)
+        currentDBStatus = "DANGER"; 
         
-        // Logic ง่ายที่สุด: ถ้า Flag ยังไม่เปิด -> แจ้งเลย!
+        // Logic: ถ้า Flag ยังไม่เปิด -> แจ้งเลย!
         if (!isAlertZone2Sent) { 
           shouldSendLine = true; 
           alertType = "ZONE_2_DANGER"; 
@@ -187,10 +187,6 @@ async function handleRequest(request: Request) {
         } 
       }
     }
-
-    // 🔥🔥🔥 ลบ SPAM FILTER ทิ้งไปแล้ว! 🔥🔥🔥
-    // เพราะเรามี Flag (isAlert...) และ Time Lock (timeDiffSec) คุมในแต่ละ Logic ไว้ดีแล้ว
-    // การมี Spam Filter ตรงนี้ทำให้การเปลี่ยนสถานะจาก Near(Danger) -> Zone2(Danger) โดนบล็อก
 
     // ==========================================
     // 📨 SEND LINE MESSAGES
@@ -240,35 +236,32 @@ async function handleRequest(request: Request) {
       data: { isAlertZone1Sent, isAlertNearZone2Sent, isAlertZone2Sent },
     });
 
-    // บันทึกพิกัด
-    let shouldSave = false;
-    if (!lastLocation) shouldSave = true;
-    else {
-        const statusChanged = lastLocation.status !== currentDBStatus;
-        if (statusChanged || timeDiffSec >= 300 || isManualSOS) shouldSave = true; 
-    }
-
-    if (shouldSave) {
-      await prisma.location.create({
-        data: {
-          dependentId: dependent.id,
-          latitude: lat, longitude: lng, battery: parseInt(battery || 0),
-          distance: distInt, status: currentDBStatus, timestamp: new Date(),
-        },
-      });
-    }
+    // ==========================================
+    // 🔥 REALTIME SAVE: บันทึกทุกครั้ง (แก้ให้แล้ว)
+    // ==========================================
+    // ตัด Logic เช็ค 5 นาทีทิ้งไปเลย เพื่อให้แผนที่ขยับตลอด
+    await prisma.location.create({
+      data: {
+        dependentId: dependent.id,
+        latitude: lat, longitude: lng, battery: parseInt(battery || 0),
+        distance: distInt, status: currentDBStatus, timestamp: new Date(),
+      },
+    });
 
     // Sync Response
     const activeAlert = await prisma.extendedHelp.findFirst({
       where: { dependentId: dependent.id, status: "DETECTED" },
     });
     let stop_em = !activeAlert;
+    
+    // Check waitViewLocation
     if (waitViewLocation) {
       stop_em = false;
       if (body.location_status) {
         await pushStatusMessage(caregiver?.user.lineId!, dependent.id);
-        stop_em = true;
+        // Reset Flag เมื่อส่งแล้ว
         await prisma.dependentProfile.update({ where: { id: dependent.id }, data: { waitViewLocation: false } });
+        stop_em = true;
       }
     }
 
@@ -284,6 +277,7 @@ async function handleRequest(request: Request) {
         lng: safeZoneData?.longitude || 0.0,
       },
     }, { 
+      // 🔥 Headers แก้ 304 (Cache)
       status: 200,
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
