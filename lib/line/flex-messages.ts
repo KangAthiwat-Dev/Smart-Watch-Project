@@ -70,8 +70,16 @@ export const createAlertFlexMessage = (
 
   // 2. เวลา
   const eventTimeRaw = record.timestamp || record.requestedAt || new Date();
-  const time = format(new Date(eventTimeRaw), "HH:mm น.", { locale: th });
-  const date = format(new Date(eventTimeRaw), "d MMM yyyy", { locale: th });
+  // สร้าง Date Object
+  const serverDate = new Date(eventTimeRaw);
+  // ✅ บังคับบวก 7 ชั่วโมง (7 * 60 * 60 * 1000 ms)
+  // เพื่อให้เวลาแสดงผลตรงกับไทย แม้ Server จะเป็น UTC
+  const thaiDate = new Date(serverDate.getTime() + (7 * 60 * 60 * 1000));
+  const time = format(thaiDate, "HH:mm น.", { locale: th });
+  const date = format(thaiDate, "d MMM yyyy", { locale: th });
+
+  // const time = format(new Date(eventTimeRaw), "HH:mm น.", { locale: th });
+  // const date = format(new Date(eventTimeRaw), "d MMM yyyy", { locale: th });
 
   // 3. พิกัด
   let lat = record.latitude ? parseFloat(record.latitude) : null;
@@ -128,7 +136,6 @@ export const createAlertFlexMessage = (
       type: "uri",
       label: "ขอความช่วยเหลือเพิ่มเติม",
       uri: safeTriggerUrl,
-      // ❌ ลบ displayText ออก! (ใส่ไม่ได้กับ type: uri)
     },
   });
 
