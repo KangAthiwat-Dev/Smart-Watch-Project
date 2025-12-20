@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -14,7 +15,6 @@ import {
   Package,
   ArrowLeftRight,
 } from 'lucide-react';
-// ✅ Import Action ที่เราเพิ่งสร้าง
 import { getSidebarCounts, markAsViewed } from '@/actions/sidebar.actions';
 
 interface SidebarProps {
@@ -24,15 +24,13 @@ interface SidebarProps {
 export function Sidebar({ isOpen }: SidebarProps) {
   const pathname = usePathname();
   
-  // ✅ State เก็บตัวเลข 4 หมวด
   const [counts, setCounts] = useState({
     alerts: 0,
-    transactions: 0, // ยืม-คืน
-    caregivers: 0,   // ผู้ดูแลใหม่
-    dependents: 0,   // ผู้พึ่งพิงใหม่
+    transactions: 0,
+    caregivers: 0,
+    dependents: 0,
   });
 
-  // ฟังก์ชันดึงข้อมูลล่าสุด
   const fetchCounts = async () => {
     try {
         const res = await getSidebarCounts();
@@ -42,15 +40,12 @@ export function Sidebar({ isOpen }: SidebarProps) {
     }
   };
 
-  // 1. ดึงข้อมูลเมื่อโหลดหน้าเว็บ
   useEffect(() => {
     fetchCounts();
 
-    // Listener เผื่อมีการอัปเดตแบบ Realtime (ถ้ามี)
     const handleAlertUpdate = () => fetchCounts();
     window.addEventListener('alert-update', handleAlertUpdate);
     
-    // ตั้ง Interval เช็คทุก 30 วินาที (Optional: เพื่อความสดใหม่)
     const interval = setInterval(fetchCounts, 30000);
 
     return () => {
@@ -59,16 +54,13 @@ export function Sidebar({ isOpen }: SidebarProps) {
     };
   }, []);
 
-  // 2. Logic ล้างเลขแจ้งเตือนเมื่อกดเข้ามาดูหน้า (เฉพาะ Users)
   useEffect(() => {
     const checkAndClearBadge = async () => {
-        // ถ้าอยู่หน้าผู้ดูแล และมีเลขค้าง -> ล้างออก
         if (pathname === '/admin/caregivers' && counts.caregivers > 0) {
             await markAsViewed('caregivers');
             setCounts(prev => ({ ...prev, caregivers: 0 }));
         }
         
-        // ถ้าอยู่หน้าผู้พึ่งพิง และมีเลขค้าง -> ล้างออก
         if (pathname === '/admin/dependents' && counts.dependents > 0) {
             await markAsViewed('dependents');
             setCounts(prev => ({ ...prev, dependents: 0 }));
@@ -76,9 +68,6 @@ export function Sidebar({ isOpen }: SidebarProps) {
     };
     
     checkAndClearBadge();
-    
-    // หมายเหตุ: หน้า Alerts และ Transactions จะไม่ล้างตอนกดเข้า
-    // เพราะมันควรจะหายไปเมื่อเรากด "จัดการ/อนุมัติ" งานเสร็จแล้ว (Auto Refresh)
   }, [pathname, counts.caregivers, counts.dependents]);
 
   const menuItems = [
@@ -91,19 +80,19 @@ export function Sidebar({ isOpen }: SidebarProps) {
       title: 'ผู้ดูแล',
       href: '/admin/caregivers',
       icon: Users,
-      badge: counts.caregivers, // ✅ Badge คนใหม่
+      badge: counts.caregivers,
     },
     {
       title: 'ผู้ที่มีภาวะพึ่งพิง',
       href: '/admin/dependents',
       icon: UserCog,
-      badge: counts.dependents, // ✅ Badge คนใหม่
+      badge: counts.dependents,
     },
     {
       title: 'การแจ้งเตือน',
       href: '/admin/alerts',
       icon: AlertTriangle,
-      badge: counts.alerts, // ✅ Badge SOS
+      badge: counts.alerts,
     },
     {
       title: 'คลังอุปกรณ์', 
@@ -114,7 +103,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       title: 'ระบบยืม-คืน',
       href: '/admin/transactions',
       icon: ArrowLeftRight,
-      badge: counts.transactions, // ✅ Badge งานรออนุมัติ (ยืม+คืน)
+      badge: counts.transactions,
     },
     {
       title: 'ติดตาม Real-time',
@@ -141,9 +130,17 @@ export function Sidebar({ isOpen }: SidebarProps) {
         )}
       >
         <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-gray-800">
-            <h2 className="text-2xl font-bold">AFE PLUS</h2>
-            <p className="text-sm text-gray-400 mt-1">Monitoring System</p>
+          
+          {/* ✅ ส่วน Header แบบใหม่: Logo เต็มๆ ไม่มีกรอบ ไม่มี Text */}
+          <div className="h-32 flex items-center justify-center p-6 border-b border-gray-800">
+            <div className="relative w-full h-full">
+                <Image 
+                    src="/images/afe-logo.png"
+                    alt="AFE PLUS Logo"
+                    fill
+                    priority
+                />
+            </div>
           </div>
 
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
@@ -158,18 +155,17 @@ export function Sidebar({ isOpen }: SidebarProps) {
                   className={cn(
                     'flex items-center justify-between px-4 py-3 rounded-lg transition-colors group',
                     isActive
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50'
                       : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                   )}
                 >
                   <div className="flex items-center gap-3">
-                      <Icon className="w-5 h-5" />
-                      <span className="font-medium">{item.title}</span>
+                      <Icon className={cn("w-5 h-5", isActive ? "text-white" : "text-gray-400 group-hover:text-white")} />
+                      <span className="font-medium text-sm">{item.title}</span>
                   </div>
                   
-                  {/* ✅ แสดง Badge (จุดแดง) ถ้ามีตัวเลข */}
                   {item.badge !== undefined && item.badge > 0 && (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white animate-pulse shadow-sm shadow-red-900">
+                      <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white animate-pulse shadow-sm shadow-red-900">
                           {item.badge > 99 ? '99+' : item.badge}
                       </span>
                   )}
@@ -178,9 +174,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
             })}
           </nav>
 
-          <div className="p-4 border-t border-gray-800">
-            <p className="text-xs text-gray-400 text-center">
-              Version 2.0.0
+          <div className="p-4 border-t border-gray-800 bg-gray-900/50">
+            <p className="text-[10px] text-gray-500 text-center font-mono">
+              Version 2.0.0 (Beta)
             </p>
           </div>
         </div>

@@ -5,29 +5,24 @@ import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import liff from '@line/liff';
 import { siteConfig } from '@/config/site';
-import { ShieldCheck, ArrowRight, Watch, Loader2 } from 'lucide-react';
+// ✅ เพิ่ม Activity, เอา ArrowRight, ShieldCheck กลับมา
+import { ShieldCheck, ArrowRight, Loader2, Activity } from 'lucide-react';
 import { checkLiffUserStatus } from '@/actions/liff-auth.actions';
 
 export default function Home() {
   const router = useRouter();
-  const [isCheckingLiff, setIsCheckingLiff] = useState(true); // สถานะกำลังเช็คว่าเป็น LIFF ไหม
+  const [isCheckingLiff, setIsCheckingLiff] = useState(true);
 
   useEffect(() => {
     const checkDispatcher = async () => {
       try {
-        // 1. Init LIFF
         await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID || '' });
 
-        // 2. 🚦 เช็คว่าเปิดในแอป LINE ไหม? (liff.isInClient)
         if (liff.isInClient()) {
-            
-            // ถ้าอยู่ใน LINE ต้อง Login เสมอ
             if (!liff.isLoggedIn()) {
                 liff.login();
                 return;
             }
-
-            // เช็คสถานะเพื่อดีดไปหน้าอื่น
             const profile = await liff.getProfile();
             const status = await checkLiffUserStatus(profile.userId);
 
@@ -38,16 +33,13 @@ export default function Home() {
             } else {
                 router.replace('/safety-settings');
             }
-            // (ยังคงสถานะ loading ต่อไป เพราะกำลังจะย้ายหน้า)
             return; 
         } 
         
-        // 3. 💻 ถ้าเปิดใน Browser ปกติ (Chrome/Safari) -> ให้หยุดโหลดแล้วโชว์หน้า Landing Page
         setIsCheckingLiff(false);
 
       } catch (error) {
         console.error("LIFF/Dispatch Error:", error);
-        // ถ้า Error ก็ให้โชว์หน้า Landing Page ไปเลย
         setIsCheckingLiff(false);
       }
     };
@@ -55,7 +47,6 @@ export default function Home() {
     checkDispatcher();
   }, [router]);
 
-  // --- ⏳ Loading View (แสดงตอนกำลังเช็คว่าเป็น LIFF ไหม) ---
   if (isCheckingLiff) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
@@ -65,7 +56,6 @@ export default function Home() {
     );
   }
 
-  // --- 🏠 Landing Page View (แสดงเฉพาะตอนเปิดใน Browser) ---
   return (
     <main className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden bg-slate-50 selection:bg-blue-500 selection:text-white">
       
@@ -83,9 +73,17 @@ export default function Home() {
           
           <div className="relative flex flex-col items-center text-center">
             
-            {/* 3. Hero Icon */}
-            <div className="mb-8 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/30 ring-4 ring-white">
-              <Watch className="h-12 w-12 text-white" strokeWidth={1.5} />
+            {/* 3. Hero Icon (ตรงปกกับ Favicon) */}
+            {/* ✅ เปลี่ยนตรงนี้ครับ: สร้างวงแหวนหัวใจด้วย Tailwind */}
+            <div className="mb-8 relative flex h-32 w-32 items-center justify-center rounded-full bg-white shadow-xl ring-8 ring-white select-none z-10">
+              
+              {/* A. วงแหวน Spinner (จำลองจาก icon.tsx) */}
+              {/* ใช้ border หนาๆ สีเทา แล้ว override ด้านบนด้วยสีฟ้า แล้วหมุน 45 องศา */}
+              <div className="absolute inset-0 h-full w-full rounded-full border-[12px] border-slate-100 border-t-blue-600 rotate-45 box-border"></div>
+              
+              {/* B. ไอคอนหัวใจตรงกลาง */}
+              <Activity className="h-14 w-14 text-blue-600 relative z-10" strokeWidth={2.5} />
+              
             </div>
 
             {/* 4. Text Content */}
@@ -97,11 +95,11 @@ export default function Home() {
               {siteConfig.description}
               <br />
               <span className="text-sm text-slate-400 font-normal mt-2 block">
-                ระบบติดตามและดูแลผู้สูงอายุอัจฉริยะ
+                ระบบติดตามและดูแลผู้ที่มีภาวะพึ่งพิงผ่าน Smart Watch
               </span>
             </p>
 
-            {/* 5. The Button (พระเอกของเรา) */}
+            {/* 5. The Button */}
             <Link
               href="/admin/login"
               className="group/btn relative w-full overflow-hidden rounded-2xl bg-slate-900 p-4 transition-all hover:bg-blue-600 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/30 active:scale-95"
@@ -128,7 +126,7 @@ export default function Home() {
       
       {/* Footer Credit */}
       <footer className="absolute bottom-6 text-center text-xs text-slate-400">
-        © 2024 {siteConfig.name}. All rights reserved.
+        © 2025 {siteConfig.name}. All rights reserved.
       </footer>
 
     </main>

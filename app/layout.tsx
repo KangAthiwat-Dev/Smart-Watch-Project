@@ -12,8 +12,8 @@ const sarabun = Sarabun({
 });
 
 export const metadata: Metadata = {
-  title: 'Smart Watch Monitoring System',
-  description: 'ระบบติดตามสุขภาพผู้สูงอายุผ่าน Smart Watch',
+  title: 'AFE Plus',
+  description: 'ระบบติดตามสุขภาพผู้ที่มีภาวะพึ่งพิงผ่าน Smart Watch',
 };
 
 export default function RootLayout({
