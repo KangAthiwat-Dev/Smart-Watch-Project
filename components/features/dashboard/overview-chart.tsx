@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react"; // ✅ 1. เพิ่ม useEffect
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -97,15 +97,15 @@ export default function OverviewChart({ data }: OverviewChartProps) {
   const [chartType, setChartType] = useState("bar");
   const [range, setRange] = useState<"day" | "week" | "month">("week");
 
-  // ✅ 2. สร้าง State มารอรับค่าเวลา
-  const [currentMonth, setCurrentMonth] = useState("");
-
-  // ✅ 3. ใช้ useEffect บังคับให้ code รันบน Browser เท่านั้น (เวลาไทยแน่นอน)
-  useEffect(() => {
-    // โค้ดในนี้จะทำงานเมื่อหน้าเว็บโหลดบนเครื่องนายน้อยแล้ว
-    // ดังนั้นมันจะใช้เวลาจากเครื่องนายน้อย (ไทย) ไม่ใช่เวลา Server (Vercel/UTC)
-    setCurrentMonth(format(new Date(), "MMMM yyyy", { locale: th }));
-  }, []);
+  // ==========================================
+  // 🔥🔥🔥 แก้แบบลูกทุ่ง: บวกเวลาเพิ่ม 7 ชั่วโมง (25200000 ms) ไปเลย
+  // ==========================================
+  const now = new Date();
+  // ถ้าบน Vercel (UTC) เวลา 00:00 -> บวก 7 ชม -> เป็น 07:00 (เวลาไทย)
+  const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+  
+  const currentMonth = format(thaiTime, "MMMM yyyy", { locale: th });
+  // ==========================================
 
   const safeData = data || { day: [], week: [], month: [] };
   const currentData = safeData[range] || [];
@@ -123,9 +123,6 @@ export default function OverviewChart({ data }: OverviewChartProps) {
     { name: "โซน", value: totalZone, color: COLORS.zone },
   ].filter((item) => item.value > 0);
 
-  // ❌ ลบบรรทัดเก่าทิ้งไปเลยครับ เพราะเราย้ายไปทำใน useEffect แล้ว
-  // const currentMonth = format(new Date(), "MMMM yyyy", { locale: th });
-
   return (
     <div className="w-full h-full p-6 bg-white rounded-[32px] border border-blue-100 shadow-[0_2px_40px_-10px_rgba(59,130,246,0.1)] flex flex-col relative overflow-hidden group">
       
@@ -142,9 +139,9 @@ export default function OverviewChart({ data }: OverviewChartProps) {
             <span>สถิติความปลอดภัย</span>
           </h3>
           <div className="flex items-center gap-2 mt-2 ml-14">
-            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full min-w-[120px] h-[30px] flex items-center justify-center">
-              {/* ✅ 4. แสดงผลค่าจาก State (ถ้ายังโหลดไม่เสร็จ ให้แสดง ... ไปก่อน) */}
-              {currentMonth ? currentMonth : <span className="animate-pulse">...</span>}
+            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full">
+              {/* ✅ แสดงตัวแปรตรงๆ เลย ไม่ต้องรอ useEffect */}
+              {currentMonth}
             </p>
           </div>
         </div>
