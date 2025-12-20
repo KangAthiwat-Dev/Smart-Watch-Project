@@ -33,11 +33,11 @@ export const createAlertFlexMessage = (
 
   // --- แยกประเภทการล้ม ---
   if (alertType === "FALL_CONSCIOUS") {
-    headerText = "ล้ม (กดขอความช่วยเหลือ)"; 
+    headerText = "พบการล้ม"; 
     startColor = "#FF416C"; 
     endColor = "#FF4B2B";
   } else if (alertType === "FALL_UNCONSCIOUS") {
-    headerText = "ล้มโดยไม่ตอบสนอง)"; 
+    headerText = "พบการล้มไม่ตอบสนอง"; 
     startColor = "#991B1B"; 
     endColor = "#7F1D1D";   
   } else if (alertType === "FALL") {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect } from "react"; // ✅ 1. เพิ่ม useEffect
 import {
   Bar,
   BarChart,
@@ -28,11 +28,11 @@ import { th } from "date-fns/locale";
 
 // ชุดสีธีมน้ำเงิน
 const COLORS = {
-  falls: "#3B82F6",   // Blue 500 (น้ำเงินกลาง)
-  sos: "#DC2626",     // Red 600 (แดง - ฉุกเฉิน)
-  heart: "#8B5CF6",   // Violet 500 (ม่วง)
-  temp: "#10B981",    // Emerald 500 (เขียว)
-  zone: "#F59E0B",    // Amber 500 (ส้ม/เหลือง)
+  falls: "#3B82F6",   // Blue 500
+  sos: "#DC2626",     // Red 600
+  heart: "#8B5CF6",   // Violet 500
+  temp: "#10B981",    // Emerald 500
+  zone: "#F59E0B",    // Amber 500
 };
 
 interface ChartData {
@@ -94,15 +94,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function OverviewChart({ data }: OverviewChartProps) {
-  // 1. Change default state from "area" to "bar"
   const [chartType, setChartType] = useState("bar");
   const [range, setRange] = useState<"day" | "week" | "month">("week");
-  
-  // ✅ เก็บค่าเดือนใน State เพื่อให้แสดงผลฝั่ง Client เท่านั้น (แก้เรื่องเวลา Vercel เพี้ยน)
+
+  // ✅ 2. สร้าง State มารอรับค่าเวลา
   const [currentMonth, setCurrentMonth] = useState("");
 
+  // ✅ 3. ใช้ useEffect บังคับให้ code รันบน Browser เท่านั้น (เวลาไทยแน่นอน)
   useEffect(() => {
-    // โค้ดในนี้จะรันบน Browser เท่านั้น ซึ่งเป็นเวลาไทยแน่นอน
+    // โค้ดในนี้จะทำงานเมื่อหน้าเว็บโหลดบนเครื่องนายน้อยแล้ว
+    // ดังนั้นมันจะใช้เวลาจากเครื่องนายน้อย (ไทย) ไม่ใช่เวลา Server (Vercel/UTC)
     setCurrentMonth(format(new Date(), "MMMM yyyy", { locale: th }));
   }, []);
 
@@ -122,6 +123,9 @@ export default function OverviewChart({ data }: OverviewChartProps) {
     { name: "โซน", value: totalZone, color: COLORS.zone },
   ].filter((item) => item.value > 0);
 
+  // ❌ ลบบรรทัดเก่าทิ้งไปเลยครับ เพราะเราย้ายไปทำใน useEffect แล้ว
+  // const currentMonth = format(new Date(), "MMMM yyyy", { locale: th });
+
   return (
     <div className="w-full h-full p-6 bg-white rounded-[32px] border border-blue-100 shadow-[0_2px_40px_-10px_rgba(59,130,246,0.1)] flex flex-col relative overflow-hidden group">
       
@@ -138,9 +142,9 @@ export default function OverviewChart({ data }: OverviewChartProps) {
             <span>สถิติความปลอดภัย</span>
           </h3>
           <div className="flex items-center gap-2 mt-2 ml-14">
-            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full min-w-[100px] h-[28px] flex items-center justify-center">
-              {/* ✅ แสดงผลเดือนที่ดึงจาก Client */}
-              {currentMonth || <span className="animate-pulse">...</span>}
+            <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full min-w-[120px] h-[30px] flex items-center justify-center">
+              {/* ✅ 4. แสดงผลค่าจาก State (ถ้ายังโหลดไม่เสร็จ ให้แสดง ... ไปก่อน) */}
+              {currentMonth ? currentMonth : <span className="animate-pulse">...</span>}
             </p>
           </div>
         </div>
