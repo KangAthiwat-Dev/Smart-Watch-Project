@@ -250,50 +250,30 @@ async function getComparisonData() {
     ];
 }
 
-// 🔥 แก้ฟังก์ชันนี้: ดึงเฉพาะที่ยังไม่จบ AND เกิดขึ้นภายใน 24 ชม. (กันข้อมูลเก่าหลอน)
 async function getActiveAlerts() {
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 ชม. ย้อนหลัง
+  const alerts = await prisma.extendedHelp.findMany({
+    where: {
+      status: { in: ['DETECTED', 'ACKNOWLEDGED'] }, // เอาเฉพาะที่ยังไม่จบเคส
+    },
+    orderBy: { requestedAt: 'desc' },
+    include: {
+      dependent: true // เพื่อเอาชื่อผู้ป่วย
+    },
+    take: 10 // เอาแค่ 10 อันล่าสุด
+  });
 
-    // 1. ดึง SOS ที่ยังไม่จบ + ไม่เก่าเกิน 1 วัน
-    const sosList = await prisma.extendedHelp.findMany({
-        where: { 
-            status: { in: ['DETECTED', 'ACKNOWLEDGED'] }, // เอาเฉพาะที่ยังไม่ปิด
-            requestedAt: { gte: yesterday }               // ✅ ต้องไม่เก่าเกิน 24 ชม.
-        },
-        include: { dependent: true },
-        orderBy: { requestedAt: 'desc' }
-    });
-
-    // 2. ดึง Fall ที่ยังไม่จบ + ไม่เก่าเกิน 1 วัน
-    const fallList = await prisma.extendedHelp.findMany({
-        where: { 
-            status: { in: ['DETECTED', 'ACKNOWLEDGED'] }, // เอาเฉพาะที่ยังไม่ปิด
-            requestedAt: { gte: yesterday }                 // ✅ ต้องไม่เก่าเกิน 24 ชม.
-        },
-        include: { dependent: true },
-        orderBy: { requestedAt: 'desc' }
-    });
-
-    // 3. รวมร่าง
-    const alerts = [
-        ...sosList.map(s => ({
-            id: s.id,
-            type: `SOS (${s.type})`,
-            status: s.status,
-            timestamp: s.requestedAt,
-            dependentName: `${s.dependent.firstName} ${s.dependent.lastName}`
-        })),
-        ...fallList.map(f => ({
-            id: f.id,
-            type: 'ตรวจพบการล้ม',
-            status: f.status,
-            timestamp: f.requestedAt,
-            dependentName: `${f.dependent.firstName} ${f.dependent.lastName}`
-        }))
-    ];
-
-    // เรียงเวลาล่าสุดขึ้นก่อน
-    return alerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return alerts.map(alert => {
+    // 🔥 สูตรโกงเวลา +7 ชั่วโมง (Hardcode) เหมือนเดิม
+    const thaiTime = new Date(new Date(alert.requestedAt).getTime() + (7 * 60 * 60 * 1000));
+    
+    return {
+      id: alert.id,
+      type: alert.type || 'SOS', // ถ้า type เป็น null ให้เป็น SOS
+      status: alert.status,
+      timestamp: thaiTime, // ✅ ส่งเวลาไทยไป
+      dependentName: alert.dependent ? `${alert.dependent.firstName} ${alert.dependent.lastName}` : "ไม่ระบุชื่อ"
+    };
+  });
 }
 
 // --- Main Page Component ---
