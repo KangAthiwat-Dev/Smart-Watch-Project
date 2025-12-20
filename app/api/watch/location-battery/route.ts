@@ -176,14 +176,24 @@ async function handleRequest(request: Request) {
       // 🔴 ZONE 2 DANGER (2)
       else if (currentStatus === 2) {
         currentDBStatus = "DANGER";
-        // ✅ ของใหม่: เช็ค Time Lock แทน (ถ้าผ่านไป 1 นาทีแล้ว ให้แจ้งใหม่ได้เลย ไม่สน Flag)
-        if (!isAlertZone2Sent || timeDiffSec > 60) { 
+        
+        // 🔥 แก้ไข Logic: เช็ค "สถานะล่าสุดใน DB" แทนการเช็คเวลา
+        // lastLocation?.status === 'DANGER' แปลว่าระบบรู้อยู่แล้วว่าเราอยู่ข้างนอก
+        const alreadyInDanger = lastLocation && lastLocation.status === 'DANGER';
+
+        // จะแจ้งเตือนก็ต่อเมื่อ:
+        // 1. ยังไม่เคยแจ้ง (เช็ค Flag เผื่อไว้)
+        // 2. และ... สถานะล่าสุดต้อง "ไม่ใช่" DANGER (คือต้องเป็นการเพิ่งเข้ามาใหม่ๆ)
+        if (!isAlertZone2Sent && !alreadyInDanger) { 
           shouldSendLine = true; 
           alertType = "ZONE_2_DANGER"; 
           
           isAlertZone2Sent = true; 
           isAlertNearZone2Sent = true; 
           isAlertZone1Sent = true;
+        } else {
+             // Log บอกหน่อยว่าทำไมไม่ส่ง
+             if (alreadyInDanger) console.log("⛔ Zone 2 Skipped: User is already in DANGER state.");
         }
       }
     }
