@@ -313,7 +313,9 @@ async function handleSafetySettingsRequest(lineId: string, replyToken: string) {
   });
 }
 
-// อยู่ใน app/api/webhook/line/route.ts
+// =======================================================
+// 🔥 ฟังก์ชันพระเอกที่แก้ใหม่ (handleStatusRequest)
+// =======================================================
 
 async function handleStatusRequest(lineId: string, replyToken: string) {
   const caregiverUser = await prisma.user.findFirst({
@@ -343,36 +345,32 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
   const latestHr = dependent.heartRateRecords[0];
   const latestTemp = dependent.temperatureRecords[0];
 
-  // =======================================================
-  // 🔥 จุดที่แก้: ตรวจสอบว่า GPS ปิดอยู่ หรือ ข้อมูลเก่าเกิน 10 วิ
-  // =======================================================
-  const isStale = latestLoc 
-    ? (new Date().getTime() - new Date(latestLoc.timestamp).getTime() > 10 * 1000) 
-    : true;
+  // 1. ถ้า GPS ปิดอยู่ -> ขึ้นหน้าจอรอ 📡
+  if (!dependent.isGpsEnabled) {
+    console.log(`📡 GPS OFF: Waking up Dependent: ${dependent.id}`);
 
-  if (!dependent.isGpsEnabled || isStale) {
-    console.log(`📡 Triggering GPS Wakeup for Dependent: ${dependent.id}`);
-
-    // 1. สั่งเปิดใน Database
+    // สั่งเปิด GPS + รอติดตามผล
     await prisma.dependentProfile.update({
       where: { id: dependent.id },
       data: { waitViewLocation: true, isGpsEnabled: true },
     });
 
-    // 2. ส่ง Flex Message บอกว่า "กำลังค้นหา..."
-    // เรียกฟังก์ชันสร้าง Flex สวยๆ ที่เราจะแปะเพิ่มด้านล่าง
     const waitingFlex = createWaitingGpsBubble();
-
     await client.replyMessage(replyToken, {
         type: 'flex',
         altText: '📡 กำลังค้นหาตำแหน่ง...',
         contents: waitingFlex as any
     });
-    
-    return;
+    return; // จบการทำงาน (ไม่ส่งข้อมูลเก่า)
   }
 
-  // ถ้าข้อมูลสดใหม่ และ GPS เปิดอยู่แล้ว ให้ส่ง Flex Message เลย (ประหยัด Push)
+  // 2. ถ้า GPS เปิดอยู่แล้ว -> โชว์ข้อมูลเลย! (ไม่ว่าจะเก่าหรือใหม่) 🚀
+  // แต่แอบ Update Flag ไว้เงียบๆ เผื่อนาฬิกาส่งค่าใหม่มาจะได้ Push ทับ
+  await prisma.dependentProfile.update({
+      where: { id: dependent.id },
+      data: { waitViewLocation: true } 
+  });
+
   const healthData = {
     bpm: latestHr?.bpm || 0,
     temp: latestTemp?.value || 0,
@@ -390,9 +388,8 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
   });
 }
 
-// ✅ FIX: ฟังก์ชัน Push Status (แก้ Logic ให้ค้นหา Dependent โดยตรง)
+// ✅ FIX: ฟังก์ชัน Push Status
 export async function pushStatusMessage(lineId: string, dependentId: number) {
-    // ค้นหา Dependent โดยตรงเลย (ชัวร์กว่า)
     const dependent = await prisma.dependentProfile.findUnique({
         where: { id: dependentId },
         include: {
