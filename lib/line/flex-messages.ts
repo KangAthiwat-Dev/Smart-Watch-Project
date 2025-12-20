@@ -17,13 +17,12 @@ const config = {
 const lineClient = new Client(config);
 
 // =================================================================
-// 🚨 Alert Message
+// 🚨 Alert Message (Fixed Version)
 // =================================================================
 export const createAlertFlexMessage = (
   record: any, 
   user: User, 
   dependentProfile: DependentProfile & { locations?: any[]; }, 
-  // ✅ เพิ่ม Type ใหม่เข้าไปใน Definition
   alertType: "FALL" | "FALL_SOS" | "FALL_UNCONSCIOUS" | "SOS" | "HEALTH" | "ZONE" | "HEART" | "TEMP" = "FALL", 
   notiText: string = ""
 ): FlexBubble => {
@@ -34,15 +33,14 @@ export const createAlertFlexMessage = (
 
   // --- แยกประเภทการล้ม ---
   if (alertType === "FALL_SOS") {
-    headerText = "ล้ม (กดขอความช่วยเหลือ)"; // รู้สึกตัว
-    startColor = "#FF416C"; // แดงอมชมพู
+    headerText = "ล้ม (กดขอความช่วยเหลือ)"; 
+    startColor = "#FF416C"; 
     endColor = "#FF4B2B";
   } else if (alertType === "FALL_UNCONSCIOUS") {
-    headerText = "ล้ม (หมดสติ/ไม่ตอบสนอง)"; // 🚨 วิกฤต!
-    startColor = "#991B1B"; // แดงเลือดหมูเข้ม
-    endColor = "#7F1D1D";   // แดงเกือบดำ (ให้ดูน่ากลัว)
+    headerText = "ล้ม (หมดสติ/ไม่ตอบสนอง)"; 
+    startColor = "#991B1B"; 
+    endColor = "#7F1D1D";   
   } else if (alertType === "FALL") {
-    // เผื่อเคสเก่าหลุดมา
     headerText = "ตรวจพบการล้ม";
     startColor = "#FF416C"; 
     endColor = "#FF4B2B";
@@ -90,25 +88,36 @@ export const createAlertFlexMessage = (
 
   const hasLocation = lat && lng;
   const mapKey = process.env.NEXT_PUBLIC_GOOGLE_MAP;
-  const liffBaseUrl = process.env.LIFF_BASE_URL;
-  const liffUrlBaseTrigger = process.env.LIFF_BASE_URL_TRIGGER || "";
+  
+  // ⚠️ เช็คชื่อ Environment Variable ให้ตรงกับใน .env นะครับ
+  const liffBaseUrl = process.env.LIFF_BASE_URL; // สำหรับ map
+  
+  // 🔥 ใช้ชื่อให้ตรงกับที่นายน้อยตั้งใน .env (เช่น NEXT_PUBLIC_LIFF_URL_TRIGGER)
+  // ถ้าในโค้ดนายน้อยใช้ LIFF_BASE_URL_TRIGGER ก็ต้องแก้ .env ให้ตรงกัน
+  const liffUrlBaseTrigger = process.env.NEXT_PUBLIC_LIFF_URL_TRIGGER || process.env.LIFF_BASE_URL_TRIGGER || "";
 
   const mapImageUrl = hasLocation && mapKey
       ? `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=16&size=800x400&maptype=roadmap&markers=color:red%7C${lat},${lng}&key=${mapKey}`
       : "https://cdn-icons-png.flaticon.com/512/10337/10337160.png";
 
-  const navigateUrl = hasLocation && liffBaseUrl
-      ? `${liffBaseUrl}/location?lat=${lat}&lng=${lng}&mode=navigate&id=${dependentProfile.id}`
-      : `http://maps.google.com/?q=${lat},${lng}`;
+  // ✅ แก้ Fallback URL ให้ถูกต้อง
+  let navigateUrl = "https://maps.google.com/";
+  if (hasLocation) {
+      navigateUrl = (liffBaseUrl)
+          ? `${liffBaseUrl}/location?lat=${lat}&lng=${lng}&mode=navigate&id=${dependentProfile.id}`
+          : `https://www.google.com/maps?q=${lat},${lng}`;
+  }
 
   const elderlyName = `คุณ${dependentProfile.firstName} ${dependentProfile.lastName}`;
 
-  // 4. 🔥 จัดการปุ่ม
+  // 4. 🔥 จัดการปุ่ม (แก้จุดตาย 400 Bad Request)
   const buttonContents: any[] = [];
 
-  const triggerUrl = `${liffUrlBaseTrigger}?id=${record.id || 0}&type=${alertType}`;
+  // ✅ เช็คว่ามี URL ไหม? ถ้าไม่มี ให้ใช้ Google Maps กันตายไปก่อน
+  const safeTriggerUrl = (liffUrlBaseTrigger && liffUrlBaseTrigger.startsWith("http"))
+      ? `${liffUrlBaseTrigger}?id=${record.id || 0}&type=${alertType}`
+      : `https://www.google.com/maps?q=${lat},${lng}`; // Fallback
 
-  // ปุ่มขอความช่วยเหลือ (แสดงเสมอ)
   buttonContents.push({
     type: "button",
     style: "primary",
@@ -118,8 +127,8 @@ export const createAlertFlexMessage = (
     action: {
       type: "uri",
       label: "ขอความช่วยเหลือเพิ่มเติม",
-      uri: triggerUrl,
-      displayText: "ขอความช่วยเหลือเพิ่มเติมด่วน!",
+      uri: safeTriggerUrl,
+      // ❌ ลบ displayText ออก! (ใส่ไม่ได้กับ type: uri)
     },
   });
 
@@ -140,14 +149,14 @@ export const createAlertFlexMessage = (
           background: {
             type: "linearGradient",
             angle: "135deg",
-            startColor: startColor, // ใช้สีตามความรุนแรงที่เราตั้งไว้
+            startColor: startColor,
             endColor: endColor,
           },
           cornerRadius: "xxl",
           contents: [
             {
               type: "text",
-              text: headerText, // ข้อความเปลี่ยนตามประเภท
+              text: headerText,
               weight: "bold",
               size: "xl",
               color: "#FFFFFF",
@@ -317,10 +326,11 @@ export async function sendCriticalAlertFlexMessage(
       `✅ LINE Alert sent to: ${recipientLineId} [Type: ${alertType}]`
     );
   } catch (error: any) {
-    console.error(
-      "❌ Failed to send LINE message:",
-      error.response?.data || error.message
-    );
+    console.error("❌ Failed to send LINE message:", error.message);
+    if (error.response && error.response.data) {
+        // ปริ้นท์รายละเอียด Error จาก LINE ออกมาดู (ช่วย Debug ได้เยอะ)
+        console.error("🔍 Detail:", JSON.stringify(error.response.data, null, 2));
+    }
   }
 }
 
