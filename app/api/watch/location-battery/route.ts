@@ -176,10 +176,14 @@ async function handleRequest(request: Request) {
       // 🔴 ZONE 2 DANGER (2)
       else if (currentStatus === 2) {
         currentDBStatus = "DANGER";
-        if (!isAlertZone2Sent) { 
+        // ✅ ของใหม่: เช็ค Time Lock แทน (ถ้าผ่านไป 1 นาทีแล้ว ให้แจ้งใหม่ได้เลย ไม่สน Flag)
+        if (!isAlertZone2Sent || timeDiffSec > 60) { 
           shouldSendLine = true; 
           alertType = "ZONE_2_DANGER"; 
-          isAlertZone2Sent = true; isAlertNearZone2Sent = true; isAlertZone1Sent = true;
+          
+          isAlertZone2Sent = true; 
+          isAlertNearZone2Sent = true; 
+          isAlertZone1Sent = true;
         }
       }
     }
