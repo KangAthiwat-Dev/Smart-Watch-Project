@@ -15,6 +15,7 @@ import {
   endOfDay
 } from "date-fns";
 import { th } from "date-fns/locale";
+import AutoRefresh from "@/components/features/dashboard/auto-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -26,47 +27,20 @@ async function getAdminProfile(session: any) {
     : null;
 }
 
-// 🧠 ฟังก์ชันช่วยนับเหตุการณ์
-// (แก้ไข: นับทั้งหมด ไม่ต้องกรอง 20 นาที)
 const countDistinctEvents = (records: any[]) => {
     if (!records || records.length === 0) return 0;
     return records.length;
-    // เผื่ออยากกรอง 20 นาทีในอนาคต
-    // 1. เรียงข้อมูลตามเวลา
-    // const sorted = [...records].sort((a, b) => {
-    //     const timeA = new Date(a.timestamp || a.requestedAt).getTime();
-    //     const timeB = new Date(b.timestamp || b.requestedAt).getTime();
-    //     return timeA - timeB;
-    // });
-
-    // let eventCount = 1;
-    // let lastTime = new Date(sorted[0].timestamp || sorted[0].requestedAt).getTime();
-
-    // for (let i = 1; i < sorted.length; i++) {
-    //     const currentTime = new Date(sorted[i].timestamp || sorted[i].requestedAt).getTime();
-    //     const diffMinutes = (currentTime - lastTime) / (1000 * 60);
-
-    //     // 2. ถ้าห่างกันเกิน 20 นาที -> นับเป็นเหตุการณ์ใหม่
-    //     if (diffMinutes > 20) {
-    //         eventCount++;
-    //         lastTime = currentTime;
-    //     }
-    // }
-    // return eventCount;
 };
 
 // --- Data Fetching ---
 
-// 🔥 1. ดึงข้อมูลกราฟเส้น/พื้นที่ (Timeline)
 async function getChartData() {
-  // 1.1 สร้างเวลาปัจจุบันแบบ THAI TIME (Server UTC + 7 ชม.)
   const nowUTC = new Date();
   const nowThai = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
 
   const startOfThisMonth = startOfMonth(nowThai);
   const startOfThisWeek = startOfWeek(nowThai, { weekStartsOn: 1 });
   
-  // ใช้เวลาที่เก่ากว่าเป็นตัวตั้งต้นดึงข้อมูล (เผื่อ Timezone นิดหน่อยเลยลบไป 1 วัน)
   const fetchStartDate = new Date((startOfThisMonth < startOfThisWeek ? startOfThisMonth : startOfThisWeek).getTime() - (24 * 60 * 60 * 1000));
 
   const [falls, heartRaw, tempRaw, zoneRaw] = await Promise.all([
@@ -91,21 +65,16 @@ async function getChartData() {
     }),
   ]);
 
-  // ✅ ฟังก์ชันช่วยนับ: แปลง Timestamp ใน DB เป็นเวลาไทยก่อนเทียบ
   const groupAndCount = (items: any[], start: Date, end: Date) => {
       const filtered = items.filter((i) => {
-          // ดึงเวลา UTC จาก DB
           const tUTC = new Date(i.timestamp);
-          // แปลงเป็นเวลาไทย (+7 ชม.)
           const tThai = new Date(tUTC.getTime() + (7 * 60 * 60 * 1000));
           
-          // เทียบกับ Slot ที่เป็นเวลาไทย
           return tThai >= start && tThai < end;
       });
       return countDistinctEvents(filtered);
   };
 
-  // 1. Hourly Today (ใช้ nowThai)
   const dayData = [];
   const startOfToday = startOfDay(nowThai); 
 
@@ -113,7 +82,6 @@ async function getChartData() {
     const start = new Date(startOfToday); start.setHours(i);
     const end = new Date(startOfToday); end.setHours(i + 1);
     
-    // โชว์เฉพาะเวลาที่ผ่านมาแล้ว (เทียบกับเวลาไทย)
     if (start <= nowThai) {
         dayData.push({ 
             name: format(start, "HH:mm"), 
@@ -125,7 +93,6 @@ async function getChartData() {
     }
   }
 
-  // 2. Daily This Week (ใช้ nowThai)
   const weekData = [];
   const weekInterval = eachDayOfInterval({ start: startOfWeek(nowThai, { weekStartsOn: 1 }), end: endOfWeek(nowThai, { weekStartsOn: 1 }) });
   for (const d of weekInterval) {
@@ -140,7 +107,6 @@ async function getChartData() {
     });
   }
 
-  // 3. Daily This Month (ใช้ nowThai)
   const monthData = [];
   const monthInterval = eachDayOfInterval({ start: startOfMonth(nowThai), end: endOfMonth(nowThai) });
   for (const d of monthInterval) {
@@ -158,14 +124,10 @@ async function getChartData() {
   return { day: dayData, week: weekData, month: monthData };
 }
 
-// 🔥 2. ฟังก์ชันดึงข้อมูลกราฟเปรียบเทียบ (Total vs Critical)
-// ✅ แก้ไข: ใส่ตัวกรองวันที่ + นับแบบ Event Grouping
 async function getComparisonData() {
-    // กำหนดช่วงเวลา (เอาเฉพาะข้อมูลปัจจุบัน ไม่เอา All Time)
     const now = new Date();
     const startOfThisMonth = startOfMonth(now);
     const startOfThisWeek = startOfWeek(now, { weekStartsOn: 1 });
-    // ใช้ตัวแปรเดียวกับ Chart เพื่อความสอดคล้อง
     const fetchStartDate = startOfThisMonth < startOfThisWeek ? startOfThisMonth : startOfThisWeek;
 
     const [
@@ -178,22 +140,19 @@ async function getComparisonData() {
         zoneTotal, 
         zoneHelp
     ] = await Promise.all([
-        // FallTotal
         prisma.fallRecord.findMany({ 
-            where: { timestamp: { gte: fetchStartDate } }, // ✅ กรองวันที่
+            where: { timestamp: { gte: fetchStartDate } }, 
             select: { timestamp: true } 
         }),
-        // FallHelp
         prisma.extendedHelp.findMany({ 
             where: { 
                 requestedAt: { gte: fetchStartDate }, 
                 type: { in: ['FALL_CONSCIOUS', 'FALL_UNCONSCIOUS'] } 
-            }, // ✅ กรองวันที่
+            }, 
             select: { requestedAt: true } 
         }),
-        // HeartTotal
         prisma.heartRateRecord.findMany({ 
-            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL'  }, // ✅ กรองวันที่
+            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL'  }, 
             select: { timestamp: true } 
         }),
         prisma.extendedHelp.findMany({ 
@@ -201,9 +160,8 @@ async function getComparisonData() {
             select: { requestedAt: true } 
         }),
         
-        // TempTotal
         prisma.temperatureRecord.findMany({ 
-            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL'  }, // ✅ กรองวันที่
+            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL'  }, 
             select: { timestamp: true } 
         }),
         prisma.extendedHelp.findMany({ 
@@ -211,9 +169,8 @@ async function getComparisonData() {
             select: { requestedAt: true } 
         }),
         
-        // ZoneTotal
         prisma.location.findMany({ 
-            where: { timestamp: { gte: fetchStartDate }, status: 'DANGER' }, // ✅ กรองวันที่
+            where: { timestamp: { gte: fetchStartDate }, status: 'DANGER' }, 
             select: { timestamp: true } 
         }),
         prisma.extendedHelp.findMany({ 
@@ -226,61 +183,53 @@ async function getComparisonData() {
         { 
             name: "การล้ม", 
             total: fallTotal.length, 
-            critical: fallHelp.length, // Fall ปกติไม่ถี่ นับตามจริงได้
-            fill: "#F97316" // Neon Orange
+            critical: fallHelp.length, 
+            fill: "#F97316" 
         },
         { 
             name: "หัวใจ", 
             total: heartTotal.length, 
-            critical: countDistinctEvents(heartHelp), // ✅ ใช้ Grouping ลดจำนวน
-            fill: "#F500FF" // Neon Pink
+            critical: countDistinctEvents(heartHelp), 
+            fill: "#F500FF" 
         },
         { 
             name: "อุณหภูมิ", 
             total: tempTotal.length, 
-            critical: countDistinctEvents(tempHelp), // ✅ ใช้ Grouping ลดจำนวน
-            fill: "#FFD600" // Neon Yellow
+            critical: countDistinctEvents(tempHelp), 
+            fill: "#FFD600" 
         },
         { 
             name: "โซน", 
             total: zoneTotal.length, 
-            critical: countDistinctEvents(zoneHelp), // ✅ ใช้ Grouping ลดจำนวน
-            fill: "#00E5FF" // Neon Cyan
+            critical: countDistinctEvents(zoneHelp), 
+            fill: "#00E5FF" 
         },
     ];
 }
 
 async function getActiveAlerts() {
-  // 1. ดึงข้อมูลจาก ExtendedHelp (แหล่งรวมทุกแจ้งเตือน)
   const alerts = await prisma.extendedHelp.findMany({
     where: {
-      status: { in: ['DETECTED', 'ACKNOWLEDGED'] }, // เอาเฉพาะที่ยังไม่จบเคส
+      status: { in: ['DETECTED', 'ACKNOWLEDGED'] }, 
     },
     orderBy: { requestedAt: 'desc' },
     include: {
-      dependent: true // เพื่อเอาชื่อผู้ป่วย
+      dependent: true 
     },
-    take: 10 // เอาแค่ 10 อันล่าสุด
+    take: 10 
   });
 
-  // ✅ สร้างตัวแปลภาษา (Dictionary)
   const typeMapping: Record<string, string> = {
       FALL_CONSCIOUS: "ล้มมีการตอบสนอง",
       FALL_UNCONSCIOUS: "ล้มไม่มีการตอบสนอง",
       HEART_RATE: "ชีพจรผิดปกติ",
       TEMPERATURE: "อุณหภูมิผิดปกติ",
       ZONE: "ออกนอกเขตปลอดภัย",
-      SOS: "ขอความช่วยเหลือ",
   };
 
   return alerts.map(alert => {
-    // เพื่อให้มันกลายเป็นเวลาไทย ไม่ว่า Server จะอยู่ที่ไหน
-    // const rawDate = new Date(alert.requestedAt);
-    // const thaiTime = new Date(rawDate.getTime() + (7 * 60 * 60 * 1000));
-    
-    // ✅ แปลง Type เป็นภาษาคน (ถ้าหาไม่เจอให้ใช้ค่าเดิม)
-    const rawType = alert.type || 'SOS';
-    const humanType = typeMapping[rawType] || rawType;
+    const rawType = alert.type || 'UNKNOWN';
+    const humanType = typeMapping[rawType] || "แจ้งเตือน";
 
     return {
       id: alert.id,
@@ -300,43 +249,48 @@ export default async function DashboardPage() {
   const adminName = adminProfile
     ? `${adminProfile.firstName} ${adminProfile.lastName}`
     : "Administrator";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
   
   const [
     totalDependents,
-    todayFallsCount,
-    ackFallsCount,
+    totalAlertsCount,
+    ackAlertsCount,   
     activeDevices,
     chartData,
     comparisonData,
-    activeAlerts // ✅ ได้มาเป็น List Array
+    activeAlerts 
   ] = await Promise.all([
     prisma.dependentProfile.count(),
-    prisma.fallRecord.count({ where: { timestamp: { gte: new Date(new Date().setHours(0,0,0,0)) } } }),
-    prisma.fallRecord.count({ 
+    
+    // นับรวมทุก Type ที่เป็นเหตุฉุกเฉิน
+    prisma.extendedHelp.count({ 
         where: { 
-            timestamp: { gte: new Date(new Date().setHours(0,0,0,0)) },
+            requestedAt: { gte: startOfToday }
+        } 
+    }),
+
+    // นับยอดที่รับเรื่องแล้ว
+    prisma.extendedHelp.count({ 
+        where: { 
+            requestedAt: { gte: startOfToday },
             status: 'ACKNOWLEDGED' 
         } 
-    }), 
-    // นับอุปกรณ์ที่มีการส่ง Location มาใน 1 ชม. ล่าสุด
+    }),
+
     prisma.location.groupBy({ by: ['dependentId'], where: { timestamp: { gte: new Date(Date.now() - 60 * 60 * 1000) } } }).then(res => res.length),
     getChartData(),
     getComparisonData(),
-
-    getActiveAlerts() // ✅ เรียกใช้ฟังก์ชันใหม่
+    getActiveAlerts()
   ]);
-
-  const funnelData = {
-    detected: todayFallsCount,
-    acknowledged: ackFallsCount,
-    resolved: ackFallsCount > 0 ? ackFallsCount : 0 
-  };
 
   return (
     <div className="h-[calc(100vh-138px)] w-full bg-slate-50 p-3 overflow-hidden">
+        <AutoRefresh />
       <div className="grid grid-cols-12 gap-3 h-full">
         
-        {/* 🟡 ส่วนซ้าย (9 ส่วน) - กราฟหลัก */}
+        {/* ส่วนซ้าย - กราฟหลัก */}
         <div className="col-span-12 lg:col-span-9 h-full">
             <ChartSection 
                 overviewData={chartData} 
@@ -345,7 +299,7 @@ export default async function DashboardPage() {
             />
         </div>
 
-        {/* 🟡 ส่วนขวา (3 ส่วน) - Stats & Funnel */}
+        {/* ส่วนขวา - Stats & Funnel */}
         <div className="col-span-12 lg:col-span-3 h-full flex flex-col gap-3">
             
             <div className="h-[90px] shrink-0">
@@ -370,11 +324,11 @@ export default async function DashboardPage() {
 
             <div className="h-[90px] shrink-0">
                 <StatsCard
-                    title="แจ้งเตือนวันนี้"
-                    value={todayFallsCount}
+                    title="แจ้งเตือนฉุกเฉิน" 
+                    value={totalAlertsCount} 
                     icon={ShieldAlert}
                     color="orange"
-                    trend={todayFallsCount > 0 ? "down" : "neutral"}
+                    trend={totalAlertsCount > 0 ? "down" : "neutral"}
                 />
             </div>
             
