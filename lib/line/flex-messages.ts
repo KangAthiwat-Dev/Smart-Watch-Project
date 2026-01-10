@@ -1854,7 +1854,7 @@ export const createSafetySettingsBubble = (
               action: {
                 type: "uri",
                 label: "ตั้งค่าชีพจร",
-                uri: `${liffBase}/safety-settings/heartrate`,
+                uri: `${liffBase}/safety-settings/heart-rate`,
               },
             },
           ],
@@ -2292,7 +2292,7 @@ export function createCaseAcceptedBubble(
             },
             {
               type: "text",
-              text: `จนท.: ${rescuerName}`,
+              text: `เจ้าหน้าที่ ${rescuerName}`,
               size: "md",
               weight: "bold",
               color: "#000000",
@@ -2301,7 +2301,7 @@ export function createCaseAcceptedBubble(
             },
             {
               type: "text",
-              text: `เบอร์: ${rescuerPhone}`,
+              text: `เบอร์ ${rescuerPhone}`,
               size: "sm",
               color: "#666666",
               align: "center",
@@ -2431,7 +2431,7 @@ export function createRescueSuccessBubble(): FlexBubble {
         },
         {
           type: "text",
-          text: "ระบบส่งข้อมูลไปยังศูนย์กู้ภัยแล้ว",
+          text: "ระบบส่งข้อมูลไปยังกลุ่มเจ้าหน้าที่แล้ว",
           size: "sm",
           color: "#4B5563",
           align: "center",

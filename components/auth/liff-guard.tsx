@@ -46,10 +46,10 @@ export default function LiffGuard({ children }: { children: React.ReactNode }) {
         const status = await checkLiffUserStatus(profile.userId);
 
         if (status === 'UNREGISTERED') {
-            if (pathname !== '/register/user') router.replace('/register/user');
+            if (pathname !== '/register/caregiver') router.replace('/register/caregiver');
             else setIsChecking(false);
         } else if (status === 'NO_ELDERLY') {
-            if (pathname !== '/register/elderly') router.replace('/register/elderly');
+            if (pathname !== '/register/dependent') router.replace('/register/dependent');
             else setIsChecking(false);
         } else {
             setIsChecking(false);

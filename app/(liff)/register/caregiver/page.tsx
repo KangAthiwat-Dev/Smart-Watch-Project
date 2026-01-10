@@ -26,7 +26,7 @@ export default function UserRegisterPage() {
         const status = await checkLiffUserStatus(profile.userId);
 
         if (status === 'NO_ELDERLY') {
-            window.location.href = '/register/elderly';
+            window.location.href = '/register/dependent';
             return;
         } else if (status === 'COMPLETE') {
             window.location.href = '/safety-settings';

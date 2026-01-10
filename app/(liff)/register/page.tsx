@@ -32,9 +32,9 @@ export default function RegisterRedirectPage() {
         setDebugLog(`Result: ${status}`);
 
         if (status === 'UNREGISTERED') {
-            window.location.href = '/register/user';
+            window.location.href = '/register/caregiver';
         } else {
-            window.location.href = '/register/elderly';
+            window.location.href = '/register/dependent';
         }
 
       } catch (error: any) {

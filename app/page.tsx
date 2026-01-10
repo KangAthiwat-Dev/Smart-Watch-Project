@@ -26,9 +26,9 @@ export default function Home() {
             const status = await checkLiffUserStatus(profile.userId);
 
             if (status === 'UNREGISTERED') {
-                router.replace('/register/user');
+                router.replace('/register/caregiver');
             } else if (status === 'NO_ELDERLY') {
-                router.replace('/register/elderly');
+                router.replace('/register/dependent');
             } else {
                 router.replace('/safety-settings');
             }

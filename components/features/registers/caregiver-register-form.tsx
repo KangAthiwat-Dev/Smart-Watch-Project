@@ -120,10 +120,10 @@ export function CaregiverRegisterForm() {
       
       if (res.success) {
         toast.success('ลงทะเบียนเรียบร้อย!');
-        setTimeout(() => window.location.href = '/register/elderly', 1500);
+        setTimeout(() => window.location.href = '/register/dependent', 1500);
       } else {
         if (res.error?.includes('ลงทะเบียนแล้ว')) {
-            window.location.href = '/register/elderly';
+            window.location.href = '/register/dependent';
         } else {
             toast.error(res.error);
         }
