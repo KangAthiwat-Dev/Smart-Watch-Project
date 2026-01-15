@@ -140,16 +140,16 @@ export async function POST(req: Request) {
 
           else if (
             userMessage === "สถานะปัจจุบัน" ||
-            userMessage === "ดูข้อมูลสุขภาพ"
+            userMessage === "ดูข้อมูลสุขภาพและตำแหน่งปัจจุบัน"
           ) {
             await handleStatusRequest(senderLineId, event.replyToken);
           }
 
-          else if (userMessage === "ข้อมูลรายละเอียด") {
+          else if (userMessage === "ดูข้อมูลผู้ใช้งาน") {
             await handleProfileRequest(senderLineId, event.replyToken);
           }
 
-          else if (userMessage === "ข้อมูลการเชื่อมต่อนาฬิกา") {
+          else if (userMessage === "การเชื่อมต่อนาฬิกา") {
             await handleWatchConnectionRequest(senderLineId, event.replyToken);
           }
 
