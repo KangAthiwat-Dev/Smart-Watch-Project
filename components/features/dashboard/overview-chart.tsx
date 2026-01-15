@@ -35,6 +35,8 @@ const COLORS = {
   zone: "#F59E0B",
 };
 
+import DateRangeFilter from "./date-range-filter";
+
 interface ChartData {
   name: string;
   falls: number;
@@ -49,6 +51,8 @@ interface OverviewChartProps {
     week: ChartData[];
     month: ChartData[];
   };
+  customData?: ChartData[];
+  customRange?: { start: Date; end: Date };
 }
 
 
@@ -57,8 +61,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const total = payload.reduce((sum: number, entry: any) => sum + entry.value, 0);
 
     return (
-      <div className="bg-white/95 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-blue-100/50 text-xs">
-        <p className="font-bold mb-3 text-slate-700 text-sm border-b border-blue-100 pb-2 flex items-center gap-2">
+      <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-blue-100/50 dark:border-gray-700/50 text-xs">
+        <p className="font-bold mb-3 text-slate-700 dark:text-slate-200 text-sm border-b border-blue-100 dark:border-gray-700 pb-2 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-blue-400" /> {label}
         </p>
         <div className="space-y-2">
@@ -76,7 +80,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-800 text-base tabular-nums">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 text-base tabular-nums">
                     {entry.value}
                   </span>
                   <span className="text-blue-600 font-bold text-xs">
@@ -93,22 +97,25 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default function OverviewChart({ data }: OverviewChartProps) {
+export default function OverviewChart({ data, customData, customRange }: OverviewChartProps) {
   const [chartType, setChartType] = useState("bar");
   const [range, setRange] = useState<"day" | "week" | "month">("week");
 
-
-
-
+  // Time calculations
   const now = new Date();
-
   const thaiTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
 
-  const currentMonth = format(thaiTime, "MMMM yyyy", { locale: th });
+  let headerDateText = format(thaiTime, "MMMM yyyy", { locale: th });
+  if (customRange) {
+    const startStr = format(customRange.start, "d MMM yyyy", { locale: th });
+    const endStr = format(customRange.end, "d MMM yyyy", { locale: th });
+    headerDateText = `${startStr} - ${endStr}`;
+  }
 
 
   const safeData = data || { day: [], week: [], month: [] };
-  const currentData = safeData[range] || [];
+  // If customData is present, use it. Otherwise use the internal range selection.
+  const currentData = customData || safeData[range] || [];
 
   const totalFalls = currentData.reduce((acc, curr) => acc + (curr.falls || 0), 0);
   const totalHeart = currentData.reduce((acc, curr) => acc + (curr.heart || 0), 0);
@@ -124,7 +131,7 @@ export default function OverviewChart({ data }: OverviewChartProps) {
   ].filter((item) => item.value > 0);
 
   return (
-    <div className="w-full h-full p-6 bg-white rounded-[32px] border border-blue-100 shadow-[0_2px_40px_-10px_rgba(59,130,246,0.1)] flex flex-col relative overflow-hidden group">
+    <div className="w-full h-full p-6 bg-white dark:bg-gray-800 rounded-[32px] border border-blue-100 dark:border-gray-700 shadow-[0_2px_40px_-10px_rgba(59,130,246,0.1)] flex flex-col relative overflow-hidden group transition-colors duration-300">
 
       { }
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-blue-50/60 to-indigo-50/60 rounded-full blur-3xl opacity-70 pointer-events-none -translate-y-1/2 translate-x-1/3" />
@@ -132,7 +139,7 @@ export default function OverviewChart({ data }: OverviewChartProps) {
       { }
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 shrink-0 z-20 relative">
         <div>
-          <h3 className="text-slate-800 font-bold text-xl flex items-center gap-3 tracking-tight">
+          <h3 className="text-slate-800 dark:text-gray-100 font-bold text-xl flex items-center gap-3 tracking-tight">
             <div className="p-2.5 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl shadow-lg shadow-blue-200">
               <Activity className="w-5 h-5" strokeWidth={2.5} />
             </div>
@@ -141,30 +148,35 @@ export default function OverviewChart({ data }: OverviewChartProps) {
           <div className="flex items-center gap-2 mt-2 ml-14">
             <p className="text-slate-400 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full">
               { }
-              {currentMonth}
+              {headerDateText}
             </p>
           </div>
         </div>
 
         { }
         <div className="flex items-center gap-3">
+          <DateRangeFilter />
           <div className="flex items-center bg-blue-50/80 p-1.5 rounded-full">
-            {(["day", "week", "month"] as const).map((r) => (
+            {!customData ? (["day", "week", "month"] as const).map((r) => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
                 className={`px-5 py-2 text-xs font-bold rounded-full transition-all duration-300 ${range === r
                   ? "bg-blue-600 text-white shadow-md shadow-blue-200 scale-105"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-gray-700/50"
                   }`}
               >
                 {r === "day" ? "วัน" : r === "week" ? "สัปดาห์" : "เดือน"}
               </button>
-            ))}
+            )) : (
+              <span className="px-5 py-2 text-xs font-bold text-blue-600">
+                กำหนดเอง
+              </span>
+            )}
           </div>
 
           <Select value={chartType} onValueChange={setChartType}>
-            <SelectTrigger className="w-[140px] h-11 rounded-full border-0 bg-blue-50 text-sm font-semibold text-blue-700 focus:ring-2 focus:ring-blue-200">
+            <SelectTrigger className="w-[140px] h-11 rounded-full border-0 bg-blue-50 dark:bg-blue-900/20 text-sm font-semibold text-blue-700 dark:text-blue-300 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800">
               <SelectValue placeholder="รูปแบบกราฟ" />
             </SelectTrigger>
             <SelectContent>

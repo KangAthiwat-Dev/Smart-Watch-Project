@@ -233,6 +233,16 @@ async function handleSosRequest(lineId: string, replyToken: string) {
     }
   });
 
+  // Create System Notification
+  await prisma.notification.create({
+    data: {
+      type: "HELP",
+      title: "แจ้งเหตุฉุกเฉิน (LINE)",
+      message: `คุณ ${caregiver.firstName} แจ้งขอความช่วยเหลือให้ ${dependent.firstName} ${dependent.lastName}`,
+      link: "/admin/dashboard?tab=alerts"
+    }
+  });
+
 
   await client.replyMessage(replyToken, {
     type: "text",

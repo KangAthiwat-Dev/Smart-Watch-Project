@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { registerUser } from '@/services/auth.service';
 import { registerSchema } from '@/lib/validations/auth.schema';
 import { sendLineNotification } from '@/lib/line/client';
+import prisma from '@/lib/db/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
     const user = await registerUser(validated);
 
     const firstName = user.caregiverProfile?.firstName ?? "";
-    const lastName  = user.caregiverProfile?.lastName ?? "";
+    const lastName = user.caregiverProfile?.lastName ?? "";
 
     if (user.lineId) {
       await sendLineNotification(
@@ -21,14 +22,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      user: {
-        id: user.id,
-        firstName,
-        lastName,
-      },
+    // Create Notification
+    await prisma.notification.create({
+      data: {
+        type: "REGISTER",
+        title: "ผู้ใช้ใหม่ลงทะเบียน",
+        message: `ลงทะเบียนใหม่: ${firstName} ${lastName} (ผู้ดูแล)`,
+        link: "/admin/dashboard?tab=users"
+      }
     });
+
+    return NextResponse.json(
+      { message: "User registered successfully", userId: user.id },
+      { status: 201 }
+    );
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(

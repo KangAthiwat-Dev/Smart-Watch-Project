@@ -16,6 +16,7 @@ import {
 } from "date-fns";
 import { th } from "date-fns/locale";
 import AutoRefresh from "@/components/features/dashboard/auto-refresh";
+import DateRangeFilter from "@/components/features/dashboard/date-range-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -30,32 +31,50 @@ const countDistinctEvents = (records: any[]) => {
     return records.length;
 };
 
-async function getChartData() {
+async function getChartData(customRange?: { start: Date; end: Date }) {
     const nowUTC = new Date();
     const nowThai = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
 
-    const startOfThisMonth = startOfMonth(nowThai);
-    const startOfThisWeek = startOfWeek(nowThai, { weekStartsOn: 1 });
+    // Determine fetch range
+    let fetchStartDate: Date;
+    let fetchEndDate: Date | undefined;
 
-    const fetchStartDate = new Date((startOfThisMonth < startOfThisWeek ? startOfThisMonth : startOfThisWeek).getTime() - (24 * 60 * 60 * 1000));
+    if (customRange) {
+        fetchStartDate = customRange.start;
+        fetchEndDate = customRange.end;
+    } else {
+        const startOfThisMonth = startOfMonth(nowThai);
+        const startOfThisWeek = startOfWeek(nowThai, { weekStartsOn: 1 });
+        // Use the earliest of the two defaults
+        fetchStartDate = new Date((startOfThisMonth < startOfThisWeek ? startOfThisMonth : startOfThisWeek).getTime() - (24 * 60 * 60 * 1000));
+        fetchEndDate = undefined; // Open ended for default view
+    }
+
+    // Common query
+    const whereCondition = {
+        timestamp: {
+            gte: fetchStartDate,
+            ...(fetchEndDate && { lte: fetchEndDate })
+        }
+    };
 
     const [falls, heartRaw, tempRaw, zoneRaw] = await Promise.all([
         prisma.fallRecord.findMany({
-            where: { timestamp: { gte: fetchStartDate } },
+            where: { timestamp: { gte: fetchStartDate, ...(fetchEndDate && { lte: fetchEndDate }) } },
             select: { timestamp: true }
         }),
         prisma.heartRateRecord.findMany({
-            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL' },
+            where: { timestamp: { gte: fetchStartDate, ...(fetchEndDate && { lte: fetchEndDate }) }, status: 'ABNORMAL' },
             select: { timestamp: true },
             orderBy: { timestamp: 'asc' }
         }),
         prisma.temperatureRecord.findMany({
-            where: { timestamp: { gte: fetchStartDate }, status: 'ABNORMAL' },
+            where: { timestamp: { gte: fetchStartDate, ...(fetchEndDate && { lte: fetchEndDate }) }, status: 'ABNORMAL' },
             select: { timestamp: true },
             orderBy: { timestamp: 'asc' }
         }),
         prisma.location.findMany({
-            where: { timestamp: { gte: fetchStartDate }, status: 'DANGER' },
+            where: { timestamp: { gte: fetchStartDate, ...(fetchEndDate && { lte: fetchEndDate }) }, status: 'DANGER' },
             select: { timestamp: true },
             orderBy: { timestamp: 'asc' }
         }),
@@ -65,12 +84,31 @@ async function getChartData() {
         const filtered = items.filter((i) => {
             const tUTC = new Date(i.timestamp);
             const tThai = new Date(tUTC.getTime() + (7 * 60 * 60 * 1000));
-
             return tThai >= start && tThai < end;
         });
         return countDistinctEvents(filtered);
     };
 
+    // If custom range is provided, generate a single dataset for that range
+    if (customRange) {
+        const customData = [];
+        const interval = eachDayOfInterval({ start: customRange.start, end: customRange.end });
+
+        for (const d of interval) {
+            const start = startOfDay(d);
+            const end = endOfDay(d);
+            customData.push({
+                name: format(d, "d MMM", { locale: th }),
+                falls: groupAndCount(falls, start, end),
+                heart: groupAndCount(heartRaw, start, end),
+                temp: groupAndCount(tempRaw, start, end),
+                zone: groupAndCount(zoneRaw, start, end)
+            });
+        }
+        return { day: [], week: [], month: [], customRaw: customData };
+    }
+
+    // Default Behavior (Day/Week/Month)
     const dayData = [];
     const startOfToday = startOfDay(nowThai);
 
@@ -237,7 +275,14 @@ async function getActiveAlerts() {
     });
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: { searchParams: Promise<{ from?: string; to?: string }> }) {
+    const searchParams = await props.searchParams;
+    const { from, to } = searchParams;
+
+    // Check if we are in custom range mode
+    const isCustomRange = from && to;
+    console.log("Dashboard Params:", { from, to, isCustomRange });
+
     const session = await getSession();
 
     const adminProfile = await getAdminProfile(session);
@@ -247,6 +292,17 @@ export default async function DashboardPage() {
 
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
+
+    // Prepare range for chart data
+    let customRange = undefined;
+    if (isCustomRange) {
+        customRange = {
+            start: new Date(from),
+            end: new Date(to) // Should probably be end of day
+        };
+        // Fix end date to be end of day 23:59:59
+        customRange.end.setHours(23, 59, 59, 999);
+    }
 
     const [
         totalDependents,
@@ -273,7 +329,7 @@ export default async function DashboardPage() {
         }),
 
         prisma.location.groupBy({ by: ['dependentId'], where: { timestamp: { gte: new Date(Date.now() - 60 * 60 * 1000) } } }).then(res => res.length),
-        getChartData(),
+        getChartData(customRange),
         getComparisonData(),
         getActiveAlerts()
     ]);
@@ -283,11 +339,13 @@ export default async function DashboardPage() {
             <AutoRefresh />
             <div className="grid grid-cols-12 gap-3 h-full">
 
-                <div className="col-span-12 lg:col-span-9 h-full">
+                <div className="col-span-12 lg:col-span-9 h-full flex flex-col gap-4">
                     <ChartSection
                         overviewData={chartData}
                         comparisonData={comparisonData}
                         adminName={adminName}
+                        customData={isCustomRange ? (chartData as any).customRaw : undefined}
+                        customRange={customRange}
                     />
                 </div>
 
@@ -315,7 +373,7 @@ export default async function DashboardPage() {
 
                     <div className="h-[90px] shrink-0">
                         <StatsCard
-                            title="แจ้งเตือนฉุกเฉิน"
+                            title="แจ้งเตือนฉุกเฉินของวันนี้"
                             value={totalAlertsCount}
                             icon={ShieldAlert}
                             color="orange"

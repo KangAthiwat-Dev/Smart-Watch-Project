@@ -18,9 +18,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const themeColor = criticalEntry?.payload?.fill || "#000";
 
     return (
-      <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 text-xs min-w-[200px]">
-        <p className="font-extrabold mb-3 text-slate-800 text-sm border-b border-slate-100 pb-2 flex items-center gap-2">
-          <span className="p-1 rounded-md bg-slate-50">
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl border border-slate-100 dark:border-gray-700 text-xs min-w-[200px]">
+        <p className="font-extrabold mb-3 text-slate-800 dark:text-gray-100 text-sm border-b border-slate-100 dark:border-gray-700 pb-2 flex items-center gap-2">
+          <span className="p-1 rounded-md bg-slate-50 dark:bg-gray-900">
             <Zap className="w-3 h-3" style={{ color: themeColor }} />
           </span>
           {label}
@@ -61,16 +61,16 @@ export default function AlertComparison({ data }: any) {
 
   return (
 
-    <div className="w-full h-full p-6 bg-white rounded-[32px] border border-slate-100 shadow-sm flex flex-col relative overflow-hidden">
+    <div className="w-full h-full p-6 bg-white dark:bg-gray-800 rounded-[32px] border border-slate-100 dark:border-gray-700 shadow-sm flex flex-col relative overflow-hidden transition-colors duration-300">
 
       { }
       <div className="flex items-center justify-between mb-8 shrink-0 z-20 relative">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-2xl text-slate-700">
+          <div className="w-12 h-12 flex items-center justify-center bg-slate-50 dark:bg-gray-900 border border-slate-100 dark:border-gray-700 rounded-2xl text-slate-700 dark:text-gray-300">
             <Scale className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-black text-slate-800 text-xl tracking-tight">
+            <h3 className="font-black text-slate-800 dark:text-gray-100 text-xl tracking-tight">
               อัตราส่วนความเสี่ยง
             </h3>
             <p className="text-sm text-slate-400 font-medium">ตรวจพบทั้งหมด vs ขอความช่วยเหลือ</p>
@@ -149,7 +149,7 @@ export default function AlertComparison({ data }: any) {
       </div>
 
       { }
-      <div className="flex items-center justify-center gap-8 mt-6 pt-4 border-t border-slate-50 shrink-0 z-20">
+      <div className="flex items-center justify-center gap-8 mt-6 pt-4 border-t border-slate-50 dark:border-gray-700 shrink-0 z-20">
         <div className="flex items-center gap-2.5">
           { }
           <div className="w-3 h-3 bg-slate-800/15 rounded-full" />

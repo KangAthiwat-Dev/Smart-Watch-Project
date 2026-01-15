@@ -20,7 +20,7 @@ export default function StatsCard({
   subtext,
   color = "blue",
 }: StatsCardProps) {
-  
+
   const colorStyles = {
     blue: { bg: "bg-blue-50", text: "text-blue-600" },
     orange: { bg: "bg-orange-50", text: "text-orange-600" },
@@ -32,10 +32,10 @@ export default function StatsCard({
   const currentStyle = colorStyles[color] || colorStyles.blue;
 
   return (
-    <Card className="h-full rounded-2xl shadow-sm border border-slate-100 flex items-center overflow-hidden">
+    <Card className="h-full rounded-2xl shadow-sm border border-slate-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center overflow-hidden transition-colors duration-300">
       <CardContent className="p-4 w-full flex items-center gap-3">
-        
-        {}
+
+        { }
         {Icon && (
           <div
             className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-colors ${currentStyle.bg}`}
@@ -44,27 +44,26 @@ export default function StatsCard({
           </div>
         )}
 
-        {}
+        { }
         <div className="flex flex-col min-w-0">
-          {}
-          <p className="text-2xl font-bold text-slate-800 tracking-tight leading-tight">
+          { }
+          <p className="text-2xl font-bold text-slate-800 dark:text-gray-100 tracking-tight leading-tight">
             {value}
           </p>
-          
-          <p className="text-xs font-medium text-slate-500 truncate mt-0.5">
+
+          <p className="text-xs font-medium text-slate-500 dark:text-gray-400 truncate mt-0.5">
             {title}
           </p>
 
           <div className="flex items-center gap-2 mt-0.5">
             {change && (
               <span
-                className={`text-[10px] font-bold flex items-center ${
-                  trend === "up"
-                    ? "text-emerald-600"
-                    : trend === "down"
+                className={`text-[10px] font-bold flex items-center ${trend === "up"
+                  ? "text-emerald-600"
+                  : trend === "down"
                     ? "text-rose-600"
                     : "text-slate-400"
-                }`}
+                  }`}
               >
                 {trend === "up" ? "↑" : trend === "down" ? "↓" : ""} {change}
               </span>

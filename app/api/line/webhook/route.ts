@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
                       {
                         type: 'uri',
                         label: ' ลงทะเบียน',
-                        uri: `https://liff.line.me/${env.NEXT_PUBLIC_LIFF_ID}`,
+                        uri: `https://liff.line.me/${env.NEXT_PUBLIC_LIFF_ID}/register`,
                       },
                     ],
                   },
