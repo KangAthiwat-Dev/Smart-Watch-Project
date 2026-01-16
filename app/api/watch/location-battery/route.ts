@@ -6,6 +6,7 @@ import {
 } from "@/lib/line/flex-messages";
 import { Client } from "@line/bot-sdk";
 import { pushStatusMessage } from "@/app/api/webhook/line/route";
+import { calculateDistance } from "@/lib/utils";
 
 const lineClient = new Client({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || "",
@@ -18,7 +19,7 @@ async function handleRequest(request: Request) {
   try {
     const body = await request.json();
 
-    
+
     const targetId = body.uId || body.lineId || body.users_id;
     const { battery, distance, status } = body;
     let rawLat = body.latitude ?? body.lat ?? 0;
@@ -32,14 +33,14 @@ async function handleRequest(request: Request) {
 
     if (!targetId) return NextResponse.json({ error: "Missing ID" }, { status: 400 });
 
-    
+
     const user = await prisma.user.findUnique({
       where: { id: parseInt(targetId) },
       include: {
         dependentProfile: {
           include: {
             caregiver: { include: { user: true } },
-            locations: { take: 1, orderBy: { timestamp: "desc" } }, 
+            locations: { take: 1, orderBy: { timestamp: "desc" } },
             safeZones: { take: 1 },
           },
         },
@@ -54,12 +55,20 @@ async function handleRequest(request: Request) {
     const caregiver = dependent.caregiver;
     const safeZoneData = dependent.safeZones[0];
     const waitViewLocation = dependent.waitViewLocation ?? false;
-    
-    
+
+
     let { isAlertZone1Sent, isAlertNearZone2Sent, isAlertZone2Sent } = dependent;
 
     const statusInt = parseInt(status);
-    const distInt = parseInt(distance || 0);
+
+    // Calculate distance server-side if safe zone data is available
+    let distInt = parseInt(distance || 0);
+    if (safeZoneData && safeZoneData.latitude && safeZoneData.longitude) {
+      if (lat !== 0 && lng !== 0) {
+        distInt = Math.floor(calculateDistance(lat, lng, safeZoneData.latitude, safeZoneData.longitude));
+        console.log(` Server-side distance calc: ${distInt}m (Watch says: ${distance})`);
+      }
+    }
 
     if (statusInt === 0 && distInt === 0) {
       return NextResponse.json({ success: true, message: "Glitch Skipped" });
@@ -67,179 +76,179 @@ async function handleRequest(request: Request) {
 
     const r1 = safeZoneData?.radiusLv1 || 100;
     const r2 = safeZoneData?.radiusLv2 || 500;
-    
-    
-    const isDistanceCritical = distInt >= r2; 
+
+
+    const isDistanceCritical = distInt >= r2;
     const isManualSOS = (statusInt === 2) && !isDistanceCritical;
 
     let currentDBStatus: "SAFE" | "WARNING" | "DANGER" = "SAFE";
     let shouldSendLine = false;
     let alertType = "NONE";
 
-    
+
     const lastLocation = dependent.locations[0];
     const now = new Date();
-    let timeDiffSec = 9999; 
+    let timeDiffSec = 9999;
     if (lastLocation) {
-        timeDiffSec = (now.getTime() - new Date(lastLocation.timestamp).getTime()) / 1000;
+      timeDiffSec = (now.getTime() - new Date(lastLocation.timestamp).getTime()) / 1000;
     }
 
-    
-    
-    
+
+
+
     if (isManualSOS) {
-        console.log(" Manual SOS Detected!");
-        currentDBStatus = "DANGER";
-        const recentSOS = await prisma.extendedHelp.findFirst({
-            where: { dependentId: dependent.id, type: "WATCH_SOS", requestedAt: { gte: new Date(Date.now() - 60000) } }
-        });
+      console.log(" Manual SOS Detected!");
+      currentDBStatus = "DANGER";
+      const recentSOS = await prisma.extendedHelp.findFirst({
+        where: { dependentId: dependent.id, type: "WATCH_SOS", requestedAt: { gte: new Date(Date.now() - 60000) } }
+      });
 
-        if (!recentSOS && caregiver?.user.lineId) {
-             await sendCriticalAlertFlexMessage(
-              caregiver.user.lineId,
-              { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
-              user, caregiver.phone || "", dependent as any, "SOS", 
-              `แจ้งเตือน: ${dependent.firstName} กดปุ่มขอความช่วยเหลือ!`
-            );
-        }
+      if (!recentSOS && caregiver?.user.lineId) {
+        await sendCriticalAlertFlexMessage(
+          caregiver.user.lineId,
+          { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
+          user, caregiver.phone || "", dependent as any, "SOS",
+          `แจ้งเตือน: ${dependent.firstName} กดปุ่มขอความช่วยเหลือ!`
+        );
+      }
     }
-    
-    
-    
+
+
+
     else {
-      let currentStatus = 0; 
+      let currentStatus = 0;
       if (safeZoneData) {
         const nearR2 = Math.floor(r2 * 0.8);
-        if (distInt <= r1) currentStatus = 0;      
-        else if (distInt < nearR2) currentStatus = 1; 
-        else if (distInt < r2) currentStatus = 3;     
-        else currentStatus = 2; 
+        if (distInt <= r1) currentStatus = 0;
+        else if (distInt < nearR2) currentStatus = 1;
+        else if (distInt < r2) currentStatus = 3;
+        else currentStatus = 2;
       }
 
       const buffer = 20;
 
-      
+
       if (currentStatus === 0) {
         currentDBStatus = "SAFE";
         if (distInt <= (r1 - buffer)) {
-            if (isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent) {
-                
-                if (timeDiffSec > 10) { 
-                    shouldSendLine = true; alertType = "BACK_SAFE";
-                    isAlertZone1Sent = false; 
-                    isAlertNearZone2Sent = false; 
-                    isAlertZone2Sent = false;
-                }
+          if (isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent) {
+
+            if (timeDiffSec > 10) {
+              shouldSendLine = true; alertType = "BACK_SAFE";
+              isAlertZone1Sent = false;
+              isAlertNearZone2Sent = false;
+              isAlertZone2Sent = false;
             }
+          }
         }
-      } 
-      
+      }
+
       else if (currentStatus === 1) {
         currentDBStatus = "WARNING";
-        
-        if (!isAlertZone1Sent) { 
-            shouldSendLine = true; alertType = "ZONE_1"; isAlertZone1Sent = true; 
+
+        if (!isAlertZone1Sent) {
+          shouldSendLine = true; alertType = "ZONE_1"; isAlertZone1Sent = true;
         }
-        
+
         else if (isAlertZone2Sent || isAlertNearZone2Sent) {
-            if (distInt <= (Math.floor(r2 * 0.8) - buffer)) {
-                
-                if (timeDiffSec > 30) {
-                    shouldSendLine = true; alertType = "BACK_TO_ZONE_1";
-                    isAlertZone2Sent = false;
-                    isAlertNearZone2Sent = false;
-                }
+          if (distInt <= (Math.floor(r2 * 0.8) - buffer)) {
+
+            if (timeDiffSec > 30) {
+              shouldSendLine = true; alertType = "BACK_TO_ZONE_1";
+              isAlertZone2Sent = false;
+              isAlertNearZone2Sent = false;
             }
+          }
         }
-      } 
-      
+      }
+
       else if (currentStatus === 3) {
-          currentDBStatus = "DANGER"; 
-          
-          
-          if (!isAlertNearZone2Sent) {
-              shouldSendLine = true; alertType = "NEAR_ZONE_2";
-              isAlertNearZone2Sent = true; isAlertZone1Sent = true; 
+        currentDBStatus = "DANGER";
+
+
+        if (!isAlertNearZone2Sent) {
+          shouldSendLine = true; alertType = "NEAR_ZONE_2";
+          isAlertNearZone2Sent = true; isAlertZone1Sent = true;
+        }
+
+        else if (isAlertZone2Sent) {
+          if (distInt <= (r2 - buffer)) {
+
+            if (timeDiffSec > 30) {
+              shouldSendLine = true; alertType = "BACK_TO_NEAR_ZONE_2";
+              isAlertZone2Sent = false;
+            }
           }
-          
-          else if (isAlertZone2Sent) {
-             if (distInt <= (r2 - buffer)) {
-                 
-                 if (timeDiffSec > 30) {
-                     shouldSendLine = true; alertType = "BACK_TO_NEAR_ZONE_2";
-                     isAlertZone2Sent = false;
-                 }
-             }
-          }
+        }
       }
-      
+
       else if (currentStatus === 2) {
-        currentDBStatus = "DANGER"; 
-        
-        
-        if (!isAlertZone2Sent) { 
-          shouldSendLine = true; 
-          alertType = "ZONE_2_DANGER"; 
-          
-          isAlertZone2Sent = true; 
-          isAlertNearZone2Sent = true; 
+        currentDBStatus = "DANGER";
+
+
+        if (!isAlertZone2Sent) {
+          shouldSendLine = true;
+          alertType = "ZONE_2_DANGER";
+
+          isAlertZone2Sent = true;
+          isAlertNearZone2Sent = true;
           isAlertZone1Sent = true;
-        } 
+        }
       }
     }
 
-    
-    
-    
+
+
+
     if (shouldSendLine && caregiver?.user.lineId && !isManualSOS) {
-       const lineId = caregiver.user.lineId;
-       const distText = `${distInt} ม.`;
-       
-       try {
-           if (alertType === "BACK_SAFE") {
-               const msg = createGeneralAlertBubble("กลับเข้าสู่พื้นที่ปลอดภัย", "ผู้ป่วยกลับเข้ามาในเขตบ้านเรียบร้อยแล้ว", "ปลอดภัย", "#10B981", false);
-               await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าพื้นที่", contents: msg });
-           } 
-           else if (alertType === "ZONE_2_DANGER") {
-               await sendCriticalAlertFlexMessage(
-                  lineId,
-                  { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
-                  user, caregiver.phone || "", dependent as any, 
-                  "ZONE", 
-                  `️ แจ้งเตือน: ${dependent.firstName} ออกนอกเขตปลอดภัย! (ระยะ ${distText})`
-               );
-           }
-           else if (alertType === "ZONE_1") {
-               const msg = createGeneralAlertBubble("ออกนอกพื้นที่ชั้นใน", `ระยะ ${distText}`, distText, "#F59E0B", false);
-               await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนโซน 1", contents: msg });
-           } 
-           else if (alertType === "BACK_TO_ZONE_1") {
-               const msg = createGeneralAlertBubble("กลับเข้าสู่เขตชั้น 1", `ระยะ ${distText}`, distText, "#FBBF24", false);
-               await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าโซน 1", contents: msg });
-           } 
-           else if (alertType === "NEAR_ZONE_2") {
-               const msg = createGeneralAlertBubble("ใกล้หลุดเขตปลอดภัย", `ระยะ ${distText}`, distText, "#F97316", false);
-               await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนระยะ 80%", contents: msg });
-           }
-           else if (alertType === "BACK_TO_NEAR_ZONE_2") {
-               const msg = createGeneralAlertBubble("กลับเข้าสู่ระยะเฝ้าระวัง (80%)", `ระยะ ${distText}`, distText, "#FB923C", false);
-               await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าสู่ระยะ 80%", contents: msg });
-           }
-       } catch (lineError: any) {
-           console.error(" LINE Send Error:", lineError.statusCode);
-       }
+      const lineId = caregiver.user.lineId;
+      const distText = `${distInt} ม.`;
+
+      try {
+        if (alertType === "BACK_SAFE") {
+          const msg = createGeneralAlertBubble("กลับเข้าสู่พื้นที่ปลอดภัย", "ผู้ป่วยกลับเข้ามาในเขตบ้านเรียบร้อยแล้ว", "ปลอดภัย", "#10B981", false);
+          await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าพื้นที่", contents: msg });
+        }
+        else if (alertType === "ZONE_2_DANGER") {
+          await sendCriticalAlertFlexMessage(
+            lineId,
+            { latitude: lat, longitude: lng, timestamp: new Date(), id: 0 },
+            user, caregiver.phone || "", dependent as any,
+            "ZONE",
+            `️ แจ้งเตือน: ${dependent.firstName} ออกนอกเขตปลอดภัย! (ระยะ ${distText})`
+          );
+        }
+        else if (alertType === "ZONE_1") {
+          const msg = createGeneralAlertBubble("ออกนอกพื้นที่ชั้นใน", `ระยะ ${distText}`, distText, "#F59E0B", false);
+          await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนโซน 1", contents: msg });
+        }
+        else if (alertType === "BACK_TO_ZONE_1") {
+          const msg = createGeneralAlertBubble("กลับเข้าสู่เขตชั้น 1", `ระยะ ${distText}`, distText, "#FBBF24", false);
+          await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าโซน 1", contents: msg });
+        }
+        else if (alertType === "NEAR_ZONE_2") {
+          const msg = createGeneralAlertBubble("ใกล้หลุดเขตปลอดภัย", `ระยะ ${distText}`, distText, "#F97316", false);
+          await lineClient.pushMessage(lineId, { type: "flex", altText: "เตือนระยะ 80%", contents: msg });
+        }
+        else if (alertType === "BACK_TO_NEAR_ZONE_2") {
+          const msg = createGeneralAlertBubble("กลับเข้าสู่ระยะเฝ้าระวัง (80%)", `ระยะ ${distText}`, distText, "#FB923C", false);
+          await lineClient.pushMessage(lineId, { type: "flex", altText: "กลับเข้าสู่ระยะ 80%", contents: msg });
+        }
+      } catch (lineError: any) {
+        console.error(" LINE Send Error:", lineError.statusCode);
+      }
     }
 
-    
+
     await prisma.dependentProfile.update({
       where: { id: dependent.id },
       data: { isAlertZone1Sent, isAlertNearZone2Sent, isAlertZone2Sent },
     });
 
-    
-    
-    
-    
+
+
+
+
     await prisma.location.create({
       data: {
         dependentId: dependent.id,
@@ -248,18 +257,18 @@ async function handleRequest(request: Request) {
       },
     });
 
-    
+
     const activeAlert = await prisma.extendedHelp.findFirst({
       where: { dependentId: dependent.id, status: "DETECTED" },
     });
     let stop_em = !activeAlert;
-    
-    
+
+
     if (waitViewLocation) {
       stop_em = false;
       if (body.location_status) {
         await pushStatusMessage(caregiver?.user.lineId!, dependent.id);
-        
+
         await prisma.dependentProfile.update({ where: { id: dependent.id }, data: { waitViewLocation: false } });
         stop_em = true;
       }
@@ -267,7 +276,7 @@ async function handleRequest(request: Request) {
 
     return NextResponse.json({
       success: true,
-      command_tracking: dependent.isGpsEnabled, 
+      command_tracking: dependent.isGpsEnabled,
       request_location: !!activeAlert,
       stop_emergency: stop_em,
       sync_settings: {
@@ -276,8 +285,8 @@ async function handleRequest(request: Request) {
         lat: safeZoneData?.latitude || 0.0,
         lng: safeZoneData?.longitude || 0.0,
       },
-    }, { 
-      
+    }, {
+
       status: 200,
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

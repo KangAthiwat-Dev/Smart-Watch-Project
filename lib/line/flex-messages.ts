@@ -982,11 +982,11 @@ export const createWatchConnectionBubble = (
   isOnline: boolean,
   lastUpdate?: Date
 ): FlexBubble => {
-  const statusText = isOnline ? "ONLINE" : "OFFLINE";
+  const statusText = isOnline ? "ออนไลน์" : "ออฟไลน์";
   const statusColor = isOnline ? "#10B981" : "#94A3B8";
   const updateTime = lastUpdate
     ? format(new Date(lastUpdate), "HH:mm น.", { locale: th })
-    : "-";
+    : "ไม่พบการใช้งาน";
 
   return {
     type: "bubble",
@@ -1069,7 +1069,7 @@ export const createWatchConnectionBubble = (
               contents: [
                 {
                   type: "text",
-                  text: "อัปเดตล่าสุด",
+                  text: "การใช้งานล่าสุด",
                   size: "sm",
                   color: "#64748B",
                 },
