@@ -118,7 +118,7 @@ async function handleRequest(request: Request) {
             status: "DETECTED",
             latitude: lat,
             longitude: lng,
-            reporterId: caregiver.user.id,
+            reporterId: caregiver.id,
           }
         });
       }
