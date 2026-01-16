@@ -64,7 +64,7 @@ export default function RegisterRedirectPage() {
           </div>
 
           <h1 className="text-3xl font-black bg-gradient-to-br from-slate-700 to-slate-400 bg-clip-text text-transparent tracking-tight mb-2">
-            SAFE ZONE
+            AFE PLUS
           </h1>
           <div className="flex items-center gap-2">
             <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />

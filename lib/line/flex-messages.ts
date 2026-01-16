@@ -1630,14 +1630,6 @@ export function createRescueGroupFlexMessage(
               color: "#FFFFFF",
               align: "center",
               wrap: true,
-            },
-            {
-              type: "text",
-              text: `ID: ${alertId}`,
-              size: "xs",
-              color: "#FFFFFFCC",
-              align: "center",
-              margin: "xs"
             }
           ],
         },
