@@ -817,6 +817,9 @@ export const createProfileFlexMessage = (
               ],
             },
             {
+              type: "filler",
+            },
+            {
               type: "button",
               style: "secondary",
               height: "sm",
@@ -950,6 +953,9 @@ export const createProfileFlexMessage = (
                   ],
                 },
               ],
+            },
+            {
+              type: "filler",
             },
             {
               type: "button",
