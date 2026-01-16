@@ -141,7 +141,7 @@ async function handleRequest(request: Request) {
         if (distInt <= (r1 - buffer)) {
           if (isAlertZone1Sent || isAlertNearZone2Sent || isAlertZone2Sent) {
 
-            if (timeDiffSec > 10) {
+            if (true) {
               shouldSendLine = true; alertType = "BACK_SAFE";
               isAlertZone1Sent = false;
               isAlertNearZone2Sent = false;
@@ -161,7 +161,7 @@ async function handleRequest(request: Request) {
         else if (isAlertZone2Sent || isAlertNearZone2Sent) {
           if (distInt <= (Math.floor(r2 * 0.8) - buffer)) {
 
-            if (timeDiffSec > 30) {
+            if (true) {
               shouldSendLine = true; alertType = "BACK_TO_ZONE_1";
               isAlertZone2Sent = false;
               isAlertNearZone2Sent = false;
@@ -182,7 +182,7 @@ async function handleRequest(request: Request) {
         else if (isAlertZone2Sent) {
           if (distInt <= (r2 - buffer)) {
 
-            if (timeDiffSec > 30) {
+            if (true) {
               shouldSendLine = true; alertType = "BACK_TO_NEAR_ZONE_2";
               isAlertZone2Sent = false;
             }
