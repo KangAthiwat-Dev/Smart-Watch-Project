@@ -1900,7 +1900,9 @@ export function createCaregiverAlertBubble(
 
 export function createCaseAcceptedBubble(
   rescuerName: string,
-  rescuerPhone: string
+  rescuerPhone: string,
+  dependentName: string,
+  reportTime: string
 ): FlexBubble {
   return {
     type: "bubble",
@@ -1919,6 +1921,45 @@ export function createCaseAcceptedBubble(
           align: "center",
         },
         { type: "separator", margin: "md", color: "#FFEDD5" },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "lg",
+          spacing: "sm",
+          backgroundColor: "#FFFFFF",
+          cornerRadius: "md",
+          paddingAll: "md",
+          contents: [
+            {
+              type: "text",
+              text: "ผู้ประสบเหตุ:",
+              size: "xs",
+              color: "#666666"
+            },
+            {
+              type: "text",
+              text: dependentName,
+              size: "sm",
+              weight: "bold",
+              color: "#333333",
+              wrap: true
+            },
+            {
+              type: "text",
+              text: "เวลาแจ้งเหตุ:",
+              size: "xs",
+              color: "#666666",
+              margin: "sm"
+            },
+            {
+              type: "text",
+              text: reportTime,
+              size: "sm",
+              color: "#333333",
+              wrap: true
+            }
+          ]
+        },
         {
           type: "box",
           layout: "vertical",
@@ -1961,7 +2002,9 @@ export function createCaseAcceptedBubble(
 export function createCaseClosedBubble(
   rescuerName: string,
   details: string,
-  resolvedAt: Date
+  resolvedAt: Date,
+  dependentName: string,
+  reportTime: string
 ): FlexBubble {
   const timeStr = new Date(resolvedAt).toLocaleString("th-TH", {
     timeZone: "Asia/Bangkok",
@@ -1988,7 +2031,45 @@ export function createCaseClosedBubble(
           align: "center",
         },
         { type: "separator", margin: "md", color: "#BBF7D0" },
-
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "lg",
+          spacing: "sm",
+          backgroundColor: "#FFFFFF",
+          cornerRadius: "md",
+          paddingAll: "md",
+          contents: [
+            {
+              type: "text",
+              text: "ผู้ประสบเหตุ:",
+              size: "xs",
+              color: "#666666"
+            },
+            {
+              type: "text",
+              text: dependentName,
+              size: "sm",
+              weight: "bold",
+              color: "#333333",
+              wrap: true
+            },
+            {
+              type: "text",
+              text: "เวลาแจ้งเหตุ:",
+              size: "xs",
+              color: "#666666",
+              margin: "sm"
+            },
+            {
+              type: "text",
+              text: reportTime,
+              size: "sm",
+              color: "#333333",
+              wrap: true
+            }
+          ]
+        },
 
         {
           type: "box",
@@ -2096,7 +2177,7 @@ export function createRescueSuccessBubble(): FlexBubble {
           contents: [
             {
               type: "text",
-              text: " เจ้าหน้าที่ได้รับข้อมูลพิกัดแล้ว และกำลังตรวจสอบเพื่อเข้าช่วยเหลือครับ",
+              text: " เจ้าหน้าที่ได้รับข้อมูลพิกัดแล้ว และกำลังตรวจสอบเพื่อเข้าช่วยเหลือ",
               size: "xs",
               color: "#15803D",
               wrap: true,

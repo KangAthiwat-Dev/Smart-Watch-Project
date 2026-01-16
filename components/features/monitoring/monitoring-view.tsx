@@ -261,7 +261,7 @@ export default function MonitoringView({ users, initialFocusId }: MonitoringView
                                 selectedUser.status === 'ACKNOWLEDGED' ? (
                                     <div className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold border border-blue-700 shadow-lg shadow-blue-200 flex items-center gap-3">
                                         <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                                        จนท. กำลังปฏิบัติงาน
+                                        เจ้าหน้าที่กำลังปฏิบัติงาน
                                     </div>
                                 ) : (
                                     <div className="bg-red-500 text-white px-6 py-3 rounded-xl font-bold border border-red-600 shadow-lg shadow-red-200 animate-pulse flex items-center gap-3">

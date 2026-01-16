@@ -12,12 +12,12 @@ const lineClient = new Client({
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { action, alertId, name, phone, details } = body; 
+        const { action, alertId, name, phone, details } = body;
 
         if (!alertId || !action) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
         const id = parseInt(alertId);
-        
+
         const existingAlert = await prisma.extendedHelp.findUnique({
             where: { id: id },
             include: { dependent: { include: { caregiver: { include: { user: true } } } } }
@@ -30,16 +30,16 @@ export async function POST(req: Request) {
 
         if (action === 'accept') {
             if (existingAlert.status !== AlertStatus.DETECTED) {
-                 return NextResponse.json({ 
-                     error: "Case already taken", 
-                     takenBy: existingAlert.rescuerName 
-                 }, { status: 409 });
+                return NextResponse.json({
+                    error: "Case already taken",
+                    takenBy: existingAlert.rescuerName
+                }, { status: 409 });
             }
 
             const updated = await prisma.extendedHelp.update({
                 where: { id },
                 data: {
-                    status: AlertStatus.ACKNOWLEDGED, 
+                    status: AlertStatus.ACKNOWLEDGED,
                     rescuerName: name,
                     rescuerPhone: phone,
                     rescuerLat: null,
@@ -47,8 +47,11 @@ export async function POST(req: Request) {
                 }
             });
 
-            const acceptBubble = createCaseAcceptedBubble(name, phone);
-            
+            const dependentName = `${existingAlert.dependent?.firstName} ${existingAlert.dependent?.lastName}`;
+            const reportTime = new Date(existingAlert.requestedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+
+            const acceptBubble = createCaseAcceptedBubble(name, phone, dependentName, reportTime);
+
             if (rescueGroup) {
                 await lineClient.pushMessage(rescueGroup.groupId, {
                     type: 'flex', altText: `รับเคสแล้วโดย ${name}`, contents: acceptBubble
@@ -73,8 +76,11 @@ export async function POST(req: Request) {
                 }
             });
 
-            const closeBubble = createCaseClosedBubble(existingAlert.rescuerName!, details, updated.resolvedAt!);
-            
+            const dependentName = `${existingAlert.dependent?.firstName} ${existingAlert.dependent?.lastName}`;
+            const reportTime = new Date(existingAlert.requestedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+
+            const closeBubble = createCaseClosedBubble(existingAlert.rescuerName!, details, updated.resolvedAt!, dependentName, reportTime);
+
             if (rescueGroup) {
                 await lineClient.pushMessage(rescueGroup.groupId, {
                     type: 'flex', altText: `ปิดเคสเรียบร้อย`, contents: closeBubble
