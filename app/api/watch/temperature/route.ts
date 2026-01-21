@@ -100,9 +100,30 @@ async function handleRequest(request: Request) {
 
 
         let record = null;
-        let shouldSave = shouldSendLine || (timeDiffSec > 600);
 
-        if (shouldSave) {
+        // Check if there is a record from today to update
+        if (lastRecord) {
+            const lastRecordDate = new Date(lastRecord.timestamp);
+            const today = new Date();
+            const isSameDay = lastRecordDate.getDate() === today.getDate() &&
+                lastRecordDate.getMonth() === today.getMonth() &&
+                lastRecordDate.getFullYear() === today.getFullYear();
+
+            if (isSameDay) {
+                // Update the existing record
+                record = await prisma.temperatureRecord.update({
+                    where: { id: lastRecord.id },
+                    data: {
+                        value: currentTemp,
+                        status: statusString,
+                        timestamp: new Date(),
+                    }
+                });
+            }
+        }
+
+        // If no record updated, create a new one
+        if (!record) {
             record = await prisma.temperatureRecord.create({
                 data: {
                     dependentId: dependent.id,
@@ -111,9 +132,6 @@ async function handleRequest(request: Request) {
                     timestamp: new Date(),
                 }
             });
-        } else {
-
-            record = lastRecord;
         }
 
 
