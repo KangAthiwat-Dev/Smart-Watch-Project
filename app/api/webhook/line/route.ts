@@ -338,7 +338,7 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
             include: {
               locations: { orderBy: { timestamp: "desc" }, take: 1 },
               heartRateRecords: { orderBy: { timestamp: "desc" }, take: 1 },
-              temperatureRecords: { orderBy: { recordDate: "desc" }, take: 1 },
+              temperatureRecords: { orderBy: { timestamp: "desc" }, take: 1 },
             },
           },
         },
@@ -383,13 +383,22 @@ async function handleStatusRequest(lineId: string, replyToken: string) {
 
 
 
+  // Calculate the latest timestamp from all sources
+  const timePoints = [
+    latestLoc?.timestamp ? new Date(latestLoc.timestamp).getTime() : 0,
+    latestHr?.timestamp ? new Date(latestHr.timestamp).getTime() : 0,
+    latestTemp?.timestamp ? new Date(latestTemp.timestamp).getTime() : 0,
+  ];
+  const maxTime = Math.max(...timePoints);
+  const latestTimestamp = maxTime > 0 ? new Date(maxTime) : new Date();
+
   const healthData = {
     bpm: latestHr?.bpm || 0,
     temp: latestTemp?.value || 0,
     battery: latestLoc?.battery || 0,
     lat: latestLoc?.latitude || 0,
     lng: latestLoc?.longitude || 0,
-    updatedAt: latestLoc?.timestamp || new Date(),
+    updatedAt: latestTimestamp,
   };
 
   // Check if location is invalid (0,0 or null)
@@ -418,7 +427,7 @@ export async function pushStatusMessage(lineId: string, dependentId: number) {
     include: {
       locations: { orderBy: { timestamp: "desc" }, take: 1 },
       heartRateRecords: { orderBy: { timestamp: "desc" }, take: 1 },
-      temperatureRecords: { orderBy: { recordDate: "desc" }, take: 1 },
+      temperatureRecords: { orderBy: { timestamp: "desc" }, take: 1 },
     }
   });
 
@@ -430,13 +439,23 @@ export async function pushStatusMessage(lineId: string, dependentId: number) {
   const latestLoc = dependent.locations[0];
   const latestHr = dependent.heartRateRecords[0];
   const latestTemp = dependent.temperatureRecords[0];
+
+  // Calculate the latest timestamp from all sources
+  const timePoints = [
+    latestLoc?.timestamp ? new Date(latestLoc.timestamp).getTime() : 0,
+    latestHr?.timestamp ? new Date(latestHr.timestamp).getTime() : 0,
+    latestTemp?.timestamp ? new Date(latestTemp.timestamp).getTime() : 0,
+  ];
+  const maxTime = Math.max(...timePoints);
+  const latestTimestamp = maxTime > 0 ? new Date(maxTime) : new Date();
+
   const healthData = {
     bpm: latestHr?.bpm || 0,
     temp: latestTemp?.value || 0,
     battery: latestLoc?.battery || 0,
     lat: latestLoc?.latitude || 0,
     lng: latestLoc?.longitude || 0,
-    updatedAt: latestLoc?.timestamp || new Date(),
+    updatedAt: latestTimestamp,
   };
 
   const flexMessage = createCurrentStatusBubble(dependent, healthData);

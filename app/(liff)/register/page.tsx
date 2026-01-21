@@ -30,7 +30,15 @@ export default function RegisterRedirectPage() {
 
       } catch (error: any) {
         console.error(error);
-        setIsError(true);
+        // Attempt recovery from potential stalled token/permission issues
+        try {
+          if (liff.isLoggedIn()) {
+            liff.logout();
+          }
+          liff.login();
+        } catch (e) {
+          setIsError(true);
+        }
       }
     };
 

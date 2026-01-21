@@ -17,29 +17,40 @@ export default function Home() {
       try {
         await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID || '' });
 
-        if (liff.isInClient()) {
-            if (!liff.isLoggedIn()) {
-                liff.login();
-                return;
-            }
-            const profile = await liff.getProfile();
-            const status = await checkLiffUserStatus(profile.userId);
+        // Check if user is in LINE client OR if they are already logged in (e.g. after redirect)
+        if (liff.isInClient() || liff.isLoggedIn()) {
+          if (!liff.isLoggedIn()) {
+            liff.login();
+            return;
+          }
+          const profile = await liff.getProfile();
+          const status = await checkLiffUserStatus(profile.userId);
 
-            if (status === 'UNREGISTERED') {
-                router.replace('/register/caregiver');
-            } else if (status === 'NO_ELDERLY') {
-                router.replace('/register/dependent');
-            } else {
-                router.replace('/safety-settings');
-            }
-            return; 
-        } 
-        
+          if (status === 'UNREGISTERED') {
+            window.location.replace('/register/caregiver');
+          } else if (status === 'NO_ELDERLY') {
+            window.location.replace('/register/dependent');
+          } else {
+            window.location.replace('/safety-settings');
+          }
+          return;
+        }
+
         setIsCheckingLiff(false);
 
       } catch (error) {
         console.error("LIFF/Dispatch Error:", error);
-        setIsCheckingLiff(false);
+        // If there's an error (likely due to revoked permission causing invalid token),
+        // we try to reset by logging out and forcing login again to re-trigger consent.
+        try {
+          if (liff.isLoggedIn()) {
+            liff.logout();
+          }
+          liff.login();
+        } catch (e) {
+          // If everything fails, stop loading
+          setIsCheckingLiff(false);
+        }
       }
     };
 
@@ -57,29 +68,29 @@ export default function Home() {
 
   return (
     <main className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden bg-slate-50 selection:bg-blue-500 selection:text-white">
-      
+
       <div className="absolute inset-0 -z-10 h-full w-full bg-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]">
         <div className="absolute bottom-0 left-0 right-0 top-0 bg-[radial-gradient(circle_800px_at_100%_200px,#d5c5ff,transparent)]"></div>
       </div>
 
       <div className="relative w-full max-w-lg px-6">
         <div className="group relative overflow-hidden rounded-[2.5rem] border border-white/50 bg-white/60 p-10 shadow-2xl backdrop-blur-xl transition-all hover:shadow-blue-200/50">
-          
+
           <div className="absolute -top-24 -left-24 h-64 w-64 rounded-full bg-blue-400/20 blur-3xl group-hover:bg-blue-500/20 transition-colors duration-500"></div>
-          
+
           <div className="relative flex flex-col items-center text-center">
             <div className="mb-8 relative flex h-32 w-32 items-center justify-center rounded-full bg-white shadow-xl ring-8 ring-white select-none z-10">
-              
+
               <div className="absolute inset-0 h-full w-full rounded-full border-[12px] border-slate-100 border-t-blue-600 rotate-45 box-border"></div>
-              
+
               <Activity className="h-14 w-14 text-blue-600 relative z-10" strokeWidth={2.5} />
-              
+
             </div>
 
             <h1 className="mb-4 text-4xl font-black tracking-tight text-slate-800 sm:text-5xl">
               {siteConfig.name}
             </h1>
-            
+
             <p className="mb-10 text-lg font-medium text-slate-500 leading-relaxed max-w-sm">
               {siteConfig.description}
               <br />
@@ -110,7 +121,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      
+
       <footer className="absolute bottom-6 text-center text-xs text-slate-400">
         © 2025 {siteConfig.name}. All rights reserved.
       </footer>

@@ -487,7 +487,7 @@ export const createCurrentStatusBubble = (
     lng: number;
   }
 ): FlexBubble => {
-  const time = health.updatedAt
+  const time = health.updatedAt 
     ? format(new Date(health.updatedAt), "d MMM HH:mm น.", { locale: th })
     : "-";
   const elderlyName = `คุณ${dependentProfile.firstName} ${dependentProfile.lastName}`;
